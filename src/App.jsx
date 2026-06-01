@@ -3607,6 +3607,11 @@ export default function App() {
                     </div>
                   </div>
 
+                  <div className={captainRouteUpdated ? 'route-alert-box route-update-inline updated' : 'route-alert-box route-update-inline'}>
+                    <span>{captainRouteUpdated ? 'Updated route dialogue' : 'Route dialogue waiting for update'}</span>
+                    <strong>{captainRouteUpdated ? captainRouteAlert : 'Enter route details and click Update Captain Route to display final route dialogue boxes here.'}</strong>
+                  </div>
+
                   <div className="suggested-route-list">
                     <span>Suggested route for Captain</span>
                     {captainSuggestedRoutes.map((route) => (
@@ -3630,42 +3635,6 @@ export default function App() {
 
                   <button className="panel-action" type="submit">Update Captain Route</button>
                 </form>
-
-                {captainRouteUpdated && (
-                  <div className="panel-card route-updated-dialogue">
-                    <div className="route-card-heading">
-                      <div>
-                        <h3>Updated Route Dialogue</h3>
-                        <p>These details are now ready for rider matching and safe alerts.</p>
-                      </div>
-                      <strong>Updated</strong>
-                    </div>
-
-                    <div className="captain-route-preview">
-                      <div>
-                        <span>Active route</span>
-                        <strong>{captainRouteSource} {'->'} {captainRouteDestination}</strong>
-                      </div>
-                      <div>
-                        <span>Same destination riders</span>
-                        <strong>{sameDestinationCount} rider{sameDestinationCount === 1 ? '' : 's'} to {captainRouteDestination}</strong>
-                      </div>
-                      <div>
-                        <span>Vacant count</span>
-                        <strong>{captainRoute.vacantSeats} seat{Number(captainRoute.vacantSeats) === 1 ? '' : 's'} available</strong>
-                      </div>
-                      <div>
-                        <span>Pocket target</span>
-                        <strong>Rs {captainRoute.targetMoney}</strong>
-                      </div>
-                    </div>
-
-                    <div className="route-alert-box compact-route-alert">
-                      <span>Rider alert message</span>
-                      <strong>{captainRouteAlert}</strong>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
 
