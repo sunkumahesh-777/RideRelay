@@ -1765,6 +1765,10 @@ button {
   gap: 18px;
 }
 
+.route-updated-dialogue {
+  grid-column: 1 / -1;
+}
+
 .captain-payment-section {
   display: grid;
   gap: 18px;
@@ -2053,6 +2057,10 @@ button {
 .route-alert-box strong {
   color: #ffffff;
   line-height: 1.5;
+}
+
+.compact-route-alert {
+  margin: 18px 0 0;
 }
 
 .payment-summary-grid {

@@ -1220,6 +1220,7 @@ export default function App() {
   const [riderChatDrafts, setRiderChatDrafts] = useState({});
   const [paidCaptainRequestIds, setPaidCaptainRequestIds] = useState([]);
   const [captainRouteAlert, setCaptainRouteAlert] = useState('Submit Captain route to send route alert to matching rider dialogue boxes.');
+  const [captainRouteUpdated, setCaptainRouteUpdated] = useState(false);
   const [isQrPreviewOpen, setIsQrPreviewOpen] = useState(false);
   const [isProfileEditing, setIsProfileEditing] = useState(false);
   const [profileStatus, setProfileStatus] = useState('Profile details are locked. Click Edit to update.');
@@ -2094,6 +2095,7 @@ export default function App() {
       return nextRoute;
     });
     setCaptainRouteAlert('Route changes are in draft. Submit to alert riders.');
+    setCaptainRouteUpdated(false);
   };
 
   const handleCaptainPaymentChange = (field, value) => {
@@ -2168,6 +2170,7 @@ export default function App() {
     const routeMessage = `Captain route ${routeSource} to ${routeDestination} submitted with ${Math.max(1, captainRoute.vacantSeats || 1)} vacant seat${Number(captainRoute.vacantSeats) === 1 ? '' : 's'} and Rs ${suggestedTarget} pocket target. Matching riders will receive this route alert.`;
     setCaptainPanelMessage(routeMessage);
     setCaptainRouteAlert(routeMessage);
+    setCaptainRouteUpdated(true);
   };
 
   const handleSignupChange = (field, value) => {
@@ -3627,6 +3630,42 @@ export default function App() {
 
                   <button className="panel-action" type="submit">Update Captain Route</button>
                 </form>
+
+                {captainRouteUpdated && (
+                  <div className="panel-card route-updated-dialogue">
+                    <div className="route-card-heading">
+                      <div>
+                        <h3>Updated Route Dialogue</h3>
+                        <p>These details are now ready for rider matching and safe alerts.</p>
+                      </div>
+                      <strong>Updated</strong>
+                    </div>
+
+                    <div className="captain-route-preview">
+                      <div>
+                        <span>Active route</span>
+                        <strong>{captainRouteSource} {'->'} {captainRouteDestination}</strong>
+                      </div>
+                      <div>
+                        <span>Same destination riders</span>
+                        <strong>{sameDestinationCount} rider{sameDestinationCount === 1 ? '' : 's'} to {captainRouteDestination}</strong>
+                      </div>
+                      <div>
+                        <span>Vacant count</span>
+                        <strong>{captainRoute.vacantSeats} seat{Number(captainRoute.vacantSeats) === 1 ? '' : 's'} available</strong>
+                      </div>
+                      <div>
+                        <span>Pocket target</span>
+                        <strong>Rs {captainRoute.targetMoney}</strong>
+                      </div>
+                    </div>
+
+                    <div className="route-alert-box compact-route-alert">
+                      <span>Rider alert message</span>
+                      <strong>{captainRouteAlert}</strong>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
