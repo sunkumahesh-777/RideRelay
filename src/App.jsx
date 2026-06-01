@@ -1195,6 +1195,8 @@ export default function App() {
   const [captainChatMessage, setCaptainChatMessage] = useState('I received your request. Please wait near the pickup pin.');
   const [captainPaymentStatus, setCaptainPaymentStatus] = useState('Payment receiving details are editable.');
   const [riderChatDrafts, setRiderChatDrafts] = useState({});
+  const [captainRouteAlert, setCaptainRouteAlert] = useState('Submit Captain route to send route alert to matching rider dialogue boxes.');
+  const [isQrPreviewOpen, setIsQrPreviewOpen] = useState(false);
   const [isProfileEditing, setIsProfileEditing] = useState(false);
   const [profileStatus, setProfileStatus] = useState('Profile details are locked. Click Edit to update.');
   const [riderProfile, setRiderProfile] = useState({
@@ -2045,6 +2047,7 @@ export default function App() {
       [field]: field === 'vacantSeats' || field === 'targetMoney' ? Number(value) : value,
       status: 'Draft route. Submit to make this route visible for rider suggestions.'
     }));
+    setCaptainRouteAlert('Route changes are in draft. Submit to alert riders.');
   };
 
   const handleCaptainPaymentChange = (field, value) => {
@@ -2114,7 +2117,9 @@ export default function App() {
       targetMoney: Math.max(0, current.targetMoney || 0),
       status: `Active route submitted. ${routeDistance.toFixed(1)} km path, ${Math.max(1, captainRoute.vacantSeats || 1)} vacant seat${Number(captainRoute.vacantSeats) === 1 ? '' : 's'}, Rs ${Math.max(0, captainRoute.targetMoney || 0)} target.`
     }));
-    setCaptainPanelMessage(`Captain route ${routeSource} to ${routeDestination} is active with ${Math.max(1, captainRoute.vacantSeats || 1)} vacant seat${Number(captainRoute.vacantSeats) === 1 ? '' : 's'} and Rs ${Math.max(0, captainRoute.targetMoney || 0)} target money. RideRelay can suggest it to suitable riders.`);
+    const routeMessage = `Captain route ${routeSource} to ${routeDestination} submitted with ${Math.max(1, captainRoute.vacantSeats || 1)} vacant seat${Number(captainRoute.vacantSeats) === 1 ? '' : 's'} and Rs ${Math.max(0, captainRoute.targetMoney || 0)} pocket target. Matching riders will receive this route alert.`;
+    setCaptainPanelMessage(routeMessage);
+    setCaptainRouteAlert(routeMessage);
   };
 
   const handleSignupChange = (field, value) => {
@@ -2582,17 +2587,6 @@ export default function App() {
   const captainRouteSource = resolveLocationArea(captainRoute.source);
   const captainRouteDestination = resolveLocationArea(captainRoute.destination);
   const captainRouteDistance = getLegDistanceKm(captainRouteSource, captainRouteDestination);
-  const riderRoutePickup = resolveLocationArea(pickup);
-  const riderRouteDestination = resolveLocationArea(destination);
-  const captainRouteStops = [captainRouteSource, captainRouteDestination];
-  const captainRouteFitsRider = captainRouteStops.some((stop) => {
-    const normalizedStop = normalize(stop);
-
-    return normalizedStop.includes(normalize(riderRoutePickup))
-      || normalizedStop.includes(normalize(riderRouteDestination))
-      || normalize(riderRoutePickup).includes(normalizedStop)
-      || normalize(riderRouteDestination).includes(normalizedStop);
-  });
   const sameDestinationCount = captainRequests.filter((request) => normalize(request.destination) === normalize(captainRouteDestination)).length;
   const captainPendingCount = captainRequests.filter((request) => request.status === 'pending').length;
   const captainAcceptedCount = captainRequests.filter((request) => request.status === 'accepted' || request.status === 'present-at-pickup' || request.status === 'ride-started').length;
@@ -3240,7 +3234,7 @@ export default function App() {
         <div className="dashboard-shell">
           <aside className="panel-tabs" aria-label="Rider panels">
             {(appPage === 'captain'
-              ? [['captain', 'Captain Panel']]
+              ? [['captain', 'Captain Panel'], ['captain-bank', 'Bank Details']]
               : [
                 ['profile', 'Profile'],
                 ['payments', 'Payments'],
@@ -3464,84 +3458,7 @@ export default function App() {
                     <span>{captainProfile.email}</span>
                     <span>{captainProfile.phone}</span>
                   </div>
-                  <div className="captain-payment-box">
-                    <div className="qr-box">
-                      <span>QR</span>
-                    </div>
-                    <div>
-                      <span>Payment receiving</span>
-                      <strong>{captainProfile.upiId}</strong>
-                      <small>{captainProfile.bankName} . Account ending {captainProfile.accountLast4}</small>
-                    </div>
-                  </div>
                 </div>
-
-                <form className="panel-card captain-payment-section" onSubmit={handleCaptainPaymentSubmit}>
-                  <div className="route-card-heading">
-                    <div>
-                      <h3>Captain Payment Details</h3>
-                      <p>Add bank account, UPI ID, or upload QR code. Riders will use this after ride completion.</p>
-                    </div>
-                    <div className="qr-box large-qr">
-                      <span>QR</span>
-                    </div>
-                  </div>
-
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label htmlFor="captain-account-holder">Account Holder Name</label>
-                      <input
-                        id="captain-account-holder"
-                        value={captainProfile.accountHolder}
-                        onChange={(event) => handleCaptainPaymentChange('accountHolder', event.target.value)}
-                        placeholder="Name as per bank"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="captain-account-number">Account Number</label>
-                      <input
-                        id="captain-account-number"
-                        value={captainProfile.accountNumber}
-                        onChange={(event) => handleCaptainPaymentChange('accountNumber', event.target.value)}
-                        placeholder="Enter account number"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label htmlFor="captain-ifsc">IFSC Code</label>
-                      <input
-                        id="captain-ifsc"
-                        value={captainProfile.ifsc}
-                        onChange={(event) => handleCaptainPaymentChange('ifsc', event.target.value.toUpperCase())}
-                        placeholder="IFSC code"
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="captain-upi">UPI ID</label>
-                      <input
-                        id="captain-upi"
-                        value={captainProfile.upiId}
-                        onChange={(event) => handleCaptainPaymentChange('upiId', event.target.value)}
-                        placeholder="name@upi"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label htmlFor="captain-qr">Upload QR Code</label>
-                    <input id="captain-qr" type="file" accept=".png,.jpg,.jpeg,.pdf" onChange={handleCaptainQrUpload} />
-                    <small className="input-help">Selected file: {captainProfile.qrFileName}</small>
-                  </div>
-
-                  <div className="captain-message-bar">
-                    <span>Payment status</span>
-                    <strong>{captainPaymentStatus}</strong>
-                  </div>
-
-                  <button className="panel-action" type="submit">Submit Payment Details</button>
-                </form>
 
                 <form className="panel-card captain-route-card" onSubmit={handleCaptainRouteSubmit}>
                   <div className="route-card-heading">
@@ -3623,14 +3540,6 @@ export default function App() {
                       <span>Pocket target</span>
                       <strong>Rs {captainRoute.targetMoney}</strong>
                     </div>
-                    <div>
-                      <span>Rider route fit</span>
-                      <strong>{captainRouteFitsRider ? 'Suitable for current rider search' : 'Not matching current rider search'}</strong>
-                    </div>
-                    <div>
-                      <span>Status</span>
-                      <strong>{captainRoute.status}</strong>
-                    </div>
                   </div>
 
                   <div className="suggested-route-list">
@@ -3642,6 +3551,8 @@ export default function App() {
                         onClick={() => setCaptainRoute({
                           source: route.stops[0],
                           destination: route.stops[route.stops.length - 1],
+                          vacantSeats: captainRoute.vacantSeats,
+                          targetMoney: captainRoute.targetMoney,
                           status: `${route.title} selected. Submit to publish this route.`
                         })}
                       >
@@ -3725,6 +3636,11 @@ export default function App() {
                     </div>
                   </div>
 
+                  <div className="route-alert-box">
+                    <span>Route alert sent to rider dialogue boxes</span>
+                    <strong>{captainRouteAlert}</strong>
+                  </div>
+
                   <div className="captain-request-list">
                     {captainRequests.map((request) => (
                       <div className="captain-request" key={request.id}>
@@ -3800,6 +3716,100 @@ export default function App() {
               </div>
             )}
 
+            {activePanel === 'captain-bank' && (
+              <div className="panel-grid bank-panel-grid">
+                <form className="panel-card captain-payment-section" onSubmit={handleCaptainPaymentSubmit}>
+                  <div className="route-card-heading">
+                    <div>
+                      <h3>Captain Payment Details</h3>
+                      <p>Add bank account, UPI ID, or upload QR code. Riders will use this after ride completion.</p>
+                    </div>
+                    <button className="qr-preview-button" type="button" onClick={() => setIsQrPreviewOpen(true)}>
+                      <span className="qr-box large-qr">QR</span>
+                      <small>View QR</small>
+                    </button>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="captain-account-holder">Account Holder Name</label>
+                      <input
+                        id="captain-account-holder"
+                        value={captainProfile.accountHolder}
+                        onChange={(event) => handleCaptainPaymentChange('accountHolder', event.target.value)}
+                        placeholder="Name as per bank"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="captain-account-number">Account Number</label>
+                      <input
+                        id="captain-account-number"
+                        value={captainProfile.accountNumber}
+                        onChange={(event) => handleCaptainPaymentChange('accountNumber', event.target.value)}
+                        placeholder="Enter account number"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="captain-ifsc">IFSC Code</label>
+                      <input
+                        id="captain-ifsc"
+                        value={captainProfile.ifsc}
+                        onChange={(event) => handleCaptainPaymentChange('ifsc', event.target.value.toUpperCase())}
+                        placeholder="IFSC code"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="captain-upi">UPI ID</label>
+                      <input
+                        id="captain-upi"
+                        value={captainProfile.upiId}
+                        onChange={(event) => handleCaptainPaymentChange('upiId', event.target.value)}
+                        placeholder="name@upi"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="captain-qr">Upload QR Code</label>
+                    <input id="captain-qr" type="file" accept=".png,.jpg,.jpeg,.pdf" onChange={handleCaptainQrUpload} />
+                    <small className="input-help">Selected file: {captainProfile.qrFileName}</small>
+                  </div>
+
+                  <div className="captain-message-bar">
+                    <span>Payment status</span>
+                    <strong>{captainPaymentStatus}</strong>
+                  </div>
+
+                  <button className="panel-action" type="submit">Submit Payment Details</button>
+                </form>
+
+                <div className="panel-card bank-summary-card">
+                  <h3>Saved Payment View</h3>
+                  <div className="payment-summary-grid">
+                    <div>
+                      <span>UPI ID</span>
+                      <strong>{captainProfile.upiId}</strong>
+                    </div>
+                    <div>
+                      <span>Bank</span>
+                      <strong>{captainProfile.bankName}</strong>
+                    </div>
+                    <div>
+                      <span>Account</span>
+                      <strong>Ending {captainProfile.accountLast4}</strong>
+                    </div>
+                    <div>
+                      <span>QR file</span>
+                      <strong>{captainProfile.qrFileName}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activePanel === 'offers' && (
               <div className="panel-card">
                 <h3>Rider Offers</h3>
@@ -3846,6 +3856,18 @@ export default function App() {
           </div>
         </div>
       </section>
+      )}
+
+      {isQrPreviewOpen && (
+        <div className="qr-modal-backdrop" role="presentation" onClick={() => setIsQrPreviewOpen(false)}>
+          <div className="qr-modal" role="dialog" aria-modal="true" aria-label="Captain QR preview" onClick={(event) => event.stopPropagation()}>
+            <button className="qr-modal-close" type="button" onClick={() => setIsQrPreviewOpen(false)}>Close</button>
+            <div className="qr-box qr-scan-box">QR</div>
+            <h3>{captainProfile.upiId}</h3>
+            <p>{captainProfile.accountHolder} . {captainProfile.bankName}</p>
+            <small>Moderate size preview for rider scanning after ride completion.</small>
+          </div>
+        </div>
       )}
 
       <footer className="footer">

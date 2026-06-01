@@ -1766,10 +1766,29 @@ button {
   gap: 18px;
 }
 
+.bank-panel-grid {
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+}
+
 .large-qr {
   width: 84px;
   height: 84px;
   flex: 0 0 84px;
+}
+
+.qr-preview-button {
+  border: 0;
+  background: transparent;
+  color: #aab6ba;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  cursor: pointer;
+}
+
+.qr-preview-button small {
+  color: #aab6ba;
+  font-weight: 800;
 }
 
 .route-card-heading {
@@ -1810,6 +1829,7 @@ button {
   display: block;
   color: #ffffff;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .suggested-route-list {
@@ -1966,6 +1986,54 @@ button {
   color: #fca5a5;
 }
 
+.route-alert-box {
+  margin-bottom: 18px;
+  border-radius: 8px;
+  background: rgba(94, 234, 212, 0.08);
+  border: 1px solid rgba(94, 234, 212, 0.22);
+  padding: 16px;
+}
+
+.route-alert-box span {
+  display: block;
+  color: #aab6ba;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.route-alert-box strong {
+  color: #ffffff;
+  line-height: 1.5;
+}
+
+.payment-summary-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.payment-summary-grid div {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  padding: 14px;
+}
+
+.payment-summary-grid span,
+.payment-summary-grid strong {
+  display: block;
+}
+
+.payment-summary-grid span {
+  color: #aab6ba;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.payment-summary-grid strong {
+  color: #ffffff;
+  overflow-wrap: anywhere;
+}
+
 .captain-request-list {
   display: grid;
   gap: 16px;
@@ -2028,6 +2096,58 @@ button {
   background: #5eead4;
   color: #06130f;
   font-weight: 900;
+}
+
+.qr-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: blur(8px);
+}
+
+.qr-modal {
+  width: min(420px, 100%);
+  border-radius: 8px;
+  border: 1px solid rgba(94, 234, 212, 0.3);
+  background: #08161b;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.55);
+  padding: 24px;
+  text-align: center;
+  position: relative;
+}
+
+.qr-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-weight: 900;
+}
+
+.qr-scan-box {
+  width: 220px;
+  height: 220px;
+  margin: 22px auto 18px;
+  font-size: 32px;
+}
+
+.qr-modal h3 {
+  color: #5eead4;
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+
+.qr-modal p,
+.qr-modal small {
+  color: #aab6ba;
 }
 
 .captain-actions {
@@ -2388,7 +2508,8 @@ button {
   }
 
   .signup-shell,
-  .captain-panel-grid {
+  .captain-panel-grid,
+  .bank-panel-grid {
     grid-template-columns: 1fr;
   }
 
