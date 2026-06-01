@@ -2068,6 +2068,11 @@ button {
   border-color: rgba(94, 234, 212, 0.34);
 }
 
+.post-update-dialogues {
+  display: grid;
+  gap: 14px;
+}
+
 .payment-summary-grid {
   display: grid;
   gap: 12px;

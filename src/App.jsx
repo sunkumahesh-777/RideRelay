@@ -3588,30 +3588,6 @@ export default function App() {
                     ))}
                   </datalist>
 
-                  <div className="captain-route-preview">
-                    <div>
-                      <span>Active route</span>
-                      <strong>{captainRouteSource} {'->'} {captainRouteDestination}</strong>
-                    </div>
-                    <div>
-                      <span>Same destination riders</span>
-                      <strong>{sameDestinationCount} rider{sameDestinationCount === 1 ? '' : 's'} to {captainRouteDestination}</strong>
-                    </div>
-                    <div>
-                      <span>Vacant count</span>
-                      <strong>{captainRoute.vacantSeats} seat{Number(captainRoute.vacantSeats) === 1 ? '' : 's'} available</strong>
-                    </div>
-                    <div>
-                      <span>Pocket target</span>
-                      <strong>Rs {captainRoute.targetMoney}</strong>
-                    </div>
-                  </div>
-
-                  <div className={captainRouteUpdated ? 'route-alert-box route-update-inline updated' : 'route-alert-box route-update-inline'}>
-                    <span>{captainRouteUpdated ? 'Updated route dialogue' : 'Route dialogue waiting for update'}</span>
-                    <strong>{captainRouteUpdated ? captainRouteAlert : 'Enter route details and click Update Captain Route to display final route dialogue boxes here.'}</strong>
-                  </div>
-
                   <div className="suggested-route-list">
                     <span>Suggested route for Captain</span>
                     {captainSuggestedRoutes.map((route) => (
@@ -3634,6 +3610,34 @@ export default function App() {
                   </div>
 
                   <button className="panel-action" type="submit">Update Captain Route</button>
+
+                  {captainRouteUpdated && (
+                    <div className="post-update-dialogues">
+                      <div className="captain-route-preview">
+                        <div>
+                          <span>Active route</span>
+                          <strong>{captainRouteSource} {'->'} {captainRouteDestination}</strong>
+                        </div>
+                        <div>
+                          <span>Same destination riders</span>
+                          <strong>{sameDestinationCount} rider{sameDestinationCount === 1 ? '' : 's'} to {captainRouteDestination}</strong>
+                        </div>
+                        <div>
+                          <span>Vacant count</span>
+                          <strong>{captainRoute.vacantSeats} seat{Number(captainRoute.vacantSeats) === 1 ? '' : 's'} available</strong>
+                        </div>
+                        <div>
+                          <span>Pocket target</span>
+                          <strong>Rs {captainRoute.targetMoney}</strong>
+                        </div>
+                      </div>
+
+                      <div className="route-alert-box route-update-inline updated">
+                        <span>Updated route dialogue</span>
+                        <strong>{captainRouteAlert}</strong>
+                      </div>
+                    </div>
+                  )}
                 </form>
               </div>
             )}
