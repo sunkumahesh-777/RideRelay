@@ -689,6 +689,30 @@ const initialCaptainRequests = [
     presence: 'not-confirmed'
   },
   {
+    id: 'CR-206',
+    rider: 'Suresh Kumar',
+    pickup: 'Ameerpet',
+    destination: 'BHEL',
+    leg: 'Leg Step 1',
+    fare: 80,
+    eta: 5,
+    distanceMeters: 420,
+    status: 'pending',
+    presence: 'not-confirmed'
+  },
+  {
+    id: 'CR-207',
+    rider: 'Neha Reddy',
+    pickup: 'Ameerpet',
+    destination: 'BHEL',
+    leg: 'Leg Step 1',
+    fare: 82,
+    eta: 6,
+    distanceMeters: 480,
+    status: 'pending',
+    presence: 'not-confirmed'
+  },
+  {
     id: 'CR-205',
     rider: 'Priya Menon',
     pickup: 'Lakdikapul',
@@ -1015,6 +1039,22 @@ function isCaptainHopAligned(request, captainSource, captainDestination) {
   const avoidsBackwardDetour = fullLegDistance <= captainDistance * 1.35 + 2;
 
   return directionAligned && pickupIsAhead && pickupMovesForward && hopMovesForward && avoidsBackwardDetour;
+}
+
+function getTargetFitRiders(requests, targetMoney) {
+  const openRequests = requests
+    .filter((request) => request.status !== 'declined' && request.status !== 'ride-completed')
+    .sort((a, b) => b.fare - a.fare);
+  let runningTotal = 0;
+
+  return openRequests.filter((request) => {
+    if (runningTotal >= targetMoney) {
+      return false;
+    }
+
+    runningTotal += request.fare;
+    return true;
+  });
 }
 
 function findConnectedPlans(pickup, destination, eligibleRides, limit = 3) {
@@ -2684,12 +2724,14 @@ export default function App() {
   const acceptedCaptainRequests = captainVisibleRequests.filter((request) => ['accepted', 'present-at-pickup', 'ride-started', 'ride-completed'].includes(request.status));
   const declinedCaptainRequests = captainVisibleRequests.filter((request) => request.status === 'declined');
   const completedCaptainRequests = captainVisibleRequests.filter((request) => request.status === 'ride-completed');
-  const captainWholeRideCompleted = captainVisibleRequests.length > 0
-    && captainVisibleRequests.every((request) => request.status === 'ride-completed');
-  const acceptedRiderTotalAmount = acceptedCaptainRequests.reduce((total, request) => total + request.fare, 0);
-  const pocketReducedAmount = captainWholeRideCompleted
-    ? captainRoute.targetMoney
-    : Math.min(captainRoute.targetMoney, acceptedRiderTotalAmount);
+  const completedRiderTotalAmount = completedCaptainRequests.reduce((total, request) => total + request.fare, 0);
+  const targetFitRiders = getTargetFitRiders(captainVisibleRequests, captainRoute.targetMoney);
+  const targetFitAmount = targetFitRiders.reduce((total, request) => total + request.fare, 0);
+  const targetGap = Math.max(0, captainRoute.targetMoney - completedRiderTotalAmount);
+  const targetCanBeCovered = targetFitAmount >= captainRoute.targetMoney;
+  const captainWholeRideCompleted = completedCaptainRequests.length > 0
+    && completedRiderTotalAmount >= captainRoute.targetMoney;
+  const pocketReducedAmount = Math.min(captainRoute.targetMoney, completedRiderTotalAmount);
   const remainingTargetMoney = Math.max(0, captainRoute.targetMoney - pocketReducedAmount);
   const riderHopPins = [...new Set(captainVisibleRequests.map((request) => `${request.pickup} -> ${request.destination}`))];
 
@@ -3707,8 +3749,22 @@ export default function App() {
                     </div>
                     <div className={captainWholeRideCompleted ? 'target-complete' : ''}>
                       <span>Whole ride status</span>
-                      <strong>{captainWholeRideCompleted ? 'Target covered' : `${completedCaptainRequests.length}/${captainVisibleRequests.length} completed`}</strong>
+                      <strong>{captainWholeRideCompleted ? 'Target covered' : `Need Rs ${targetGap}`}</strong>
                     </div>
+                  </div>
+
+                  <div className={`route-alert-box target-fit-box ${targetCanBeCovered ? 'target-ready' : 'target-gap'}`}>
+                    <span>RideRelay pocket target arrangement</span>
+                    <strong>
+                      {targetCanBeCovered
+                        ? `${targetFitRiders.length} high-pay rider${targetFitRiders.length === 1 ? '' : 's'} can cover Rs ${captainRoute.targetMoney}.`
+                        : `Current matching riders cover Rs ${targetFitAmount}. Need Rs ${captainRoute.targetMoney - targetFitAmount} more or more riders.`}
+                    </strong>
+                    <small>
+                      Suggested: {targetFitRiders.length
+                        ? targetFitRiders.map((request) => `${request.rider} Rs ${request.fare}`).join(', ')
+                        : 'No suitable rider combination yet.'}
+                    </small>
                   </div>
 
                   <div className="captain-route-preview rider-route-summary">
@@ -3765,7 +3821,7 @@ export default function App() {
                           <span>{request.rider}</span>
                           <strong>Hop pickup: {request.pickup}</strong>
                           <strong>Hop destination: {request.destination} . Rs {request.fare}</strong>
-                          <small>{request.status === 'ride-completed' ? 'Ride completed. This hop counts toward Captain target coverage.' : 'Target is fully covered after the whole Captain ride is completed.'} Full rider journey hidden.</small>
+                          <small>{request.status === 'ride-completed' ? 'Ride completed. This fare is counted toward Captain target coverage.' : 'Target reduces only after completed rider fare is counted.'} Full rider journey hidden.</small>
                         </div>
                       )) : <p>No accepted riders yet.</p>}
                     </div>

@@ -2060,8 +2060,34 @@ button {
 }
 
 .route-alert-box strong {
+  display: block;
   color: #ffffff;
   line-height: 1.5;
+}
+
+.route-alert-box small {
+  display: block;
+  color: #aab6ba;
+  line-height: 1.5;
+  margin-top: 8px;
+}
+
+.target-fit-box {
+  border-color: rgba(253, 230, 138, 0.25);
+  background: rgba(253, 230, 138, 0.08);
+}
+
+.target-fit-box.target-ready {
+  border-color: rgba(94, 234, 212, 0.32);
+  background: rgba(94, 234, 212, 0.1);
+}
+
+.target-fit-box.target-ready strong {
+  color: #5eead4;
+}
+
+.target-fit-box.target-gap strong {
+  color: #fde68a;
 }
 
 .compact-route-alert {
