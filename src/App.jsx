@@ -1174,7 +1174,10 @@ export default function App() {
     vehicleNumber: 'TS09 RR 2045',
     licenseNumber: 'DL-TS-2026-2045',
     verification: 'Verified',
-    gender: 'Male'
+    gender: 'Male',
+    upiId: 'rahul@upi',
+    bankName: 'RideRelay Partner Bank',
+    accountLast4: '2045'
   });
   const [captainRequests, setCaptainRequests] = useState(initialCaptainRequests);
   const [captainPanelMessage, setCaptainPanelMessage] = useState('Captain can accept rider requests, confirm pickup presence, start ride, and complete ride.');
@@ -1183,6 +1186,7 @@ export default function App() {
     destination: 'BHEL',
     status: 'Route not submitted'
   });
+  const [captainChatMessage, setCaptainChatMessage] = useState('I received your request. Please wait near the pickup pin.');
   const [isProfileEditing, setIsProfileEditing] = useState(false);
   const [profileStatus, setProfileStatus] = useState('Profile details are locked. Click Edit to update.');
   const [riderProfile, setRiderProfile] = useState({
@@ -1232,6 +1236,30 @@ export default function App() {
       return categoryMatches && textMatches;
     });
   }, [locationSearch, locationCategory]);
+
+  const captainSuggestedRoutes = useMemo(() => {
+    const source = resolveLocationArea(captainRoute.source);
+    const destinationStop = resolveLocationArea(captainRoute.destination);
+    const directRoute = {
+      id: 'captain-direct-route',
+      title: 'Direct captain route',
+      stops: [source, destinationStop],
+      distanceKm: getLegDistanceKm(source, destinationStop),
+      note: 'Best when pickup and destination match rider direction.'
+    };
+    const matchingPlans = findConnectedPlans(source, destinationStop, liveDrivers, 2).map((option, index) => ({
+      id: `captain-hop-${index}`,
+      title: `Suggested hop route ${index + 1}`,
+      stops: option.plan.map((leg) => leg.from).concat(option.plan[option.plan.length - 1]?.to ?? destinationStop),
+      distanceKm: option.meta.distanceKm,
+      note: `${option.meta.hops} Captain leg${option.meta.hops > 1 ? 's' : ''} with shared pickup pins.`
+    }));
+
+    return [directRoute, ...matchingPlans]
+      .filter((route, index, routes) => routes.findIndex((item) => item.stops.join('->') === route.stops.join('->')) === index)
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice(0, 3);
+  }, [captainRoute.source, captainRoute.destination]);
 
   const handleFindRide = () => {
     setLoading(true);
@@ -2149,7 +2177,10 @@ export default function App() {
         vehicleNumber: signupForm.vehicleNumber,
         licenseNumber: signupForm.licenseNumber,
         verification: 'KYC pending',
-        gender: signupForm.gender
+        gender: signupForm.gender,
+        upiId: `${normalize(signupForm.fullName).replace(/\s+/g, '') || 'captain'}@upi`,
+        bankName: 'Add bank account',
+        accountLast4: signupForm.vehicleNumber.slice(-4) || '0000'
       });
     }
 
@@ -2179,12 +2210,31 @@ export default function App() {
     setCaptainPanelMessage(message);
   };
 
+  const handleCaptainSendAlert = (requestId) => {
+    const request = captainRequests.find((item) => item.id === requestId);
+    const sentAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    updateCaptainRequest(
+      requestId,
+      {
+        captainMessage: captainChatMessage,
+        alertSentAt: sentAt
+      },
+      `Alert sent to ${request?.rider ?? 'rider'}: ${captainChatMessage}`
+    );
+  };
+
   const handleCaptainAccept = (requestId) => {
     const request = captainRequests.find((item) => item.id === requestId);
     updateCaptainRequest(
       requestId,
-      { status: 'accepted', presence: 'not-confirmed' },
-      `${captainProfile.name} accepted ${request?.rider ?? 'rider'} request. Rider can verify Captain at pickup.`
+      {
+        status: 'accepted',
+        presence: 'not-confirmed',
+        captainMessage: 'Captain accepted your request. Please be ready at the pickup pin.',
+        alertSentAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      },
+      `${captainProfile.name} accepted ${request?.rider ?? 'rider'} request. Rider alert sent for pickup verification.`
     );
   };
 
@@ -2486,6 +2536,10 @@ export default function App() {
       || normalize(riderRoutePickup).includes(normalizedStop)
       || normalize(riderRouteDestination).includes(normalizedStop);
   });
+  const sameDestinationCount = captainRequests.filter((request) => normalize(request.destination) === normalize(captainRouteDestination)).length;
+  const captainPendingCount = captainRequests.filter((request) => request.status === 'pending').length;
+  const captainAcceptedCount = captainRequests.filter((request) => request.status === 'accepted' || request.status === 'present-at-pickup' || request.status === 'ride-started').length;
+  const riderHopPins = [...new Set(captainRequests.flatMap((request) => [request.pickup, request.destination]))];
 
   return (
     <div className="app">
@@ -3344,10 +3398,21 @@ export default function App() {
               <div className="panel-grid captain-panel-grid">
                 <div className="panel-card profile-card captain-profile-card">
                   <div className="avatar captain-avatar">{captainProfile.name.slice(0, 1)}</div>
-                  <div>
+                  <div className="captain-profile-copy">
                     <h3>{captainProfile.name}</h3>
                     <p>{captainProfile.verification} Captain . {captainProfile.vehicleType} . {captainProfile.vehicleNumber}</p>
                     <span>{captainProfile.email}</span>
+                    <span>{captainProfile.phone}</span>
+                  </div>
+                  <div className="captain-payment-box">
+                    <div className="qr-box">
+                      <span>QR</span>
+                    </div>
+                    <div>
+                      <span>Payment receiving</span>
+                      <strong>{captainProfile.upiId}</strong>
+                      <small>{captainProfile.bankName} . Account ending {captainProfile.accountLast4}</small>
+                    </div>
                   </div>
                 </div>
 
@@ -3395,6 +3460,10 @@ export default function App() {
                       <strong>{captainRouteSource} {'->'} {captainRouteDestination}</strong>
                     </div>
                     <div>
+                      <span>Same destination riders</span>
+                      <strong>{sameDestinationCount} rider{sameDestinationCount === 1 ? '' : 's'} to {captainRouteDestination}</strong>
+                    </div>
+                    <div>
                       <span>Rider route fit</span>
                       <strong>{captainRouteFitsRider ? 'Suitable for current rider search' : 'Not matching current rider search'}</strong>
                     </div>
@@ -3402,6 +3471,25 @@ export default function App() {
                       <span>Status</span>
                       <strong>{captainRoute.status}</strong>
                     </div>
+                  </div>
+
+                  <div className="suggested-route-list">
+                    <span>Suggested route for Captain</span>
+                    {captainSuggestedRoutes.map((route) => (
+                      <button
+                        type="button"
+                        key={route.id}
+                        onClick={() => setCaptainRoute({
+                          source: route.stops[0],
+                          destination: route.stops[route.stops.length - 1],
+                          status: `${route.title} selected. Submit to publish this route.`
+                        })}
+                      >
+                        <strong>{route.title}</strong>
+                        <small>{route.stops.join(' -> ')} . {route.distanceKm.toFixed(1)} km</small>
+                        <small>{route.note}</small>
+                      </button>
+                    ))}
                   </div>
 
                   <button className="panel-action" type="submit">Update Captain Route</button>
@@ -3416,7 +3504,33 @@ export default function App() {
                 </div>
 
                 <div className="panel-card captain-requests-card">
-                  <h3>Rider Requests</h3>
+                  <div className="request-card-heading">
+                    <div>
+                      <h3>Rider Requests</h3>
+                      <p>Captain can accept, alert rider, confirm pickup presence, and start ride.</p>
+                    </div>
+                    <div className="request-count-bar">
+                      <span>{captainRequests.length} total</span>
+                      <span>{captainPendingCount} pending</span>
+                      <span>{captainAcceptedCount} active</span>
+                    </div>
+                  </div>
+
+                  <div className="rider-request-bar">
+                    <div>
+                      <span>Rider hop pins</span>
+                      <strong>{riderHopPins.join(' -> ')}</strong>
+                    </div>
+                    <div>
+                      <span>Captain message / alert</span>
+                      <input
+                        value={captainChatMessage}
+                        onChange={(event) => setCaptainChatMessage(event.target.value)}
+                        placeholder="Message to rider after request"
+                      />
+                    </div>
+                  </div>
+
                   <div className="captain-request-list">
                     {captainRequests.map((request) => (
                       <div className="captain-request" key={request.id}>
@@ -3447,9 +3561,16 @@ export default function App() {
                           </div>
                         </div>
 
+                        <div className="captain-message-bar">
+                          <span>Rider alert bar</span>
+                          <strong>{request.captainMessage ?? 'No Captain alert sent yet.'}</strong>
+                          {request.alertSentAt && <small>Sent at {request.alertSentAt}</small>}
+                        </div>
+
                         <div className="captain-actions">
                           <button onClick={() => handleCaptainAccept(request.id)} disabled={request.status !== 'pending'}>Accept Request</button>
                           <button onClick={() => handleCaptainDecline(request.id)} disabled={request.status !== 'pending'}>Decline</button>
+                          <button onClick={() => handleCaptainSendAlert(request.id)}>Send Alert</button>
                           <button onClick={() => handleCaptainPresence(request.id, true)} disabled={!['accepted', 'location-alert'].includes(request.status)}>Captain Present</button>
                           <button onClick={() => handleCaptainPresence(request.id, false)} disabled={!['accepted', 'present-at-pickup'].includes(request.status)}>Not At Pickup</button>
                           <button onClick={() => handleCaptainRideStatus(request.id, 'ride-started')} disabled={request.status !== 'present-at-pickup'}>Start Ride</button>
