@@ -1,6 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 
 const assetPath = (fileName) => `${import.meta.env.BASE_URL}${fileName}`;
+const SESSION_STORAGE_KEY = 'riderelay-session';
+
+function getStoredSession() {
+  try {
+    const storedSession = window.localStorage.getItem(SESSION_STORAGE_KEY);
+
+    return storedSession ? JSON.parse(storedSession) : {};
+  } catch {
+    return {};
+  }
+}
 
 const liveDrivers = [
   {
@@ -1155,16 +1166,24 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState('');
   const [bookedRideId, setBookedRideId] = useState(null);
   const [statusMessage, setStatusMessage] = useState('Set your route and find a budget ride nearby.');
-  const [activePanel, setActivePanel] = useState('profile');
+  const [activePanel, setActivePanel] = useState(() => {
+    const storedPanel = getStoredSession().activePanel;
+
+    return storedPanel || 'profile';
+  });
   const [paymentMethod, setPaymentMethod] = useState('UPI');
   const [walletBalance, setWalletBalance] = useState(260);
   const [paymentStatus, setPaymentStatus] = useState('Choose a ride to unlock payment.');
   const [selectedLocationId, setSelectedLocationId] = useState(1);
   const [locationSearch, setLocationSearch] = useState('');
   const [locationCategory, setLocationCategory] = useState('All');
-  const [appPage, setAppPage] = useState('auth');
+  const [appPage, setAppPage] = useState(() => {
+    const storedPage = getStoredSession().appPage;
+
+    return ['rider', 'captain'].includes(storedPage) ? storedPage : 'auth';
+  });
   const [authMode, setAuthMode] = useState('login');
-  const [signupRole, setSignupRole] = useState('Rider');
+  const [signupRole, setSignupRole] = useState(() => getStoredSession().role || 'Rider');
   const [signupMethod, setSignupMethod] = useState('Email');
   const [signupForm, setSignupForm] = useState(signupFields);
   const [authErrors, setAuthErrors] = useState({});
@@ -1221,6 +1240,18 @@ export default function App() {
     const timer = setInterval(updateTime, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (appPage === 'auth') {
+      return;
+    }
+
+    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+      appPage,
+      activePanel,
+      role: appPage === 'captain' ? 'Captain' : 'Rider'
+    }));
+  }, [appPage, activePanel]);
 
   const availableStops = useMemo(() => {
     return [...new Set([
@@ -2276,6 +2307,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    window.localStorage.removeItem(SESSION_STORAGE_KEY);
     setAppPage('auth');
     setAuthMode('login');
     setAuthStatus('Logged out. Choose Rider or Captain to continue.');
