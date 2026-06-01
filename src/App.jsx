@@ -2262,7 +2262,9 @@ export default function App() {
 
       <section className="signup-section auth-screen" id="signup-panel">
         <div className="section-title compact">
-          <span className="auth-orbit">RR</span>
+          <span className="auth-orbit">
+            <img src={assetPath('riderelay-logo.png')} alt="RideRelay logo mark" />
+          </span>
           <h2>
             Welcome back!
           </h2>
