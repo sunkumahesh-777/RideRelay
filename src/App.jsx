@@ -3648,8 +3648,8 @@ export default function App() {
 
                   <div className="accepted-money-summary">
                     <div>
-                      <span>Accepted rider total</span>
-                      <strong>Rs {acceptedRiderTotalAmount}</strong>
+                      <span>Accepted riders count</span>
+                      <strong>{acceptedCaptainRequests.length} rider{acceptedCaptainRequests.length === 1 ? '' : 's'}</strong>
                     </div>
                     <div>
                       <span>Pocket reduced</span>
@@ -3658,6 +3658,25 @@ export default function App() {
                     <div>
                       <span>Remaining target</span>
                       <strong>Rs {remainingTargetMoney}</strong>
+                    </div>
+                  </div>
+
+                  <div className="captain-route-preview rider-route-summary">
+                    <div>
+                      <span>Active route</span>
+                      <strong>{captainRouteSource} {'->'} {captainRouteDestination}</strong>
+                    </div>
+                    <div>
+                      <span>Same destination riders</span>
+                      <strong>{sameDestinationCount} rider{sameDestinationCount === 1 ? '' : 's'} to {captainRouteDestination}</strong>
+                    </div>
+                    <div>
+                      <span>Vacant count</span>
+                      <strong>{captainRoute.vacantSeats} seat{Number(captainRoute.vacantSeats) === 1 ? '' : 's'} available</strong>
+                    </div>
+                    <div>
+                      <span>Pocket target</span>
+                      <strong>Rs {captainRoute.targetMoney}</strong>
                     </div>
                   </div>
 

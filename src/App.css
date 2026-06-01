@@ -1914,6 +1914,10 @@ button {
   margin-bottom: 18px;
 }
 
+.rider-route-summary {
+  margin-bottom: 18px;
+}
+
 .accepted-money-summary div {
   border-radius: 8px;
   background: rgba(253, 230, 138, 0.08);
