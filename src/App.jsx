@@ -989,6 +989,34 @@ function movesTowardDestination(from, to, destination) {
   return toDistance < fromDistance - 0.2;
 }
 
+function isCaptainHopAligned(request, captainSource, captainDestination) {
+  const normalizedSource = normalize(captainSource);
+  const normalizedDestination = normalize(captainDestination);
+  const normalizedPickup = normalize(request.pickup);
+  const normalizedHopDestination = normalize(request.destination);
+
+  if (normalizedPickup === normalizedHopDestination) {
+    return false;
+  }
+
+  const captainDistance = getLegDistanceKm(captainSource, captainDestination);
+  const fullLegDistance = getLegDistanceKm(captainSource, request.pickup)
+    + getLegDistanceKm(request.pickup, request.destination)
+    + getLegDistanceKm(request.destination, captainDestination);
+  const captainBearing = getBearingDegrees(getLocationPoint(captainSource), getLocationPoint(captainDestination));
+  const hopBearing = getBearingDegrees(getLocationPoint(request.pickup), getLocationPoint(request.destination));
+  const pickupBearing = getBearingDegrees(getLocationPoint(captainSource), getLocationPoint(request.pickup));
+  const directionAligned = getBearingDiff(captainBearing, hopBearing) <= 75;
+  const pickupIsStart = normalizedPickup === normalizedSource;
+  const destinationIsCaptainEnd = normalizedHopDestination === normalizedDestination;
+  const pickupIsAhead = pickupIsStart || getBearingDiff(captainBearing, pickupBearing) <= 90;
+  const pickupMovesForward = pickupIsStart || movesTowardDestination(captainSource, request.pickup, captainDestination);
+  const hopMovesForward = destinationIsCaptainEnd || movesTowardDestination(request.pickup, request.destination, captainDestination);
+  const avoidsBackwardDetour = fullLegDistance <= captainDistance * 1.35 + 2;
+
+  return directionAligned && pickupIsAhead && pickupMovesForward && hopMovesForward && avoidsBackwardDetour;
+}
+
 function findConnectedPlans(pickup, destination, eligibleRides, limit = 3) {
   const start = resolveLocationArea(pickup);
   const end = resolveLocationArea(destination);
@@ -2648,16 +2676,17 @@ export default function App() {
   const captainRouteSource = resolveLocationArea(captainRoute.source);
   const captainRouteDestination = resolveLocationArea(captainRoute.destination);
   const captainRouteDistance = getLegDistanceKm(captainRouteSource, captainRouteDestination);
-  const sameDestinationCount = captainRequests.filter((request) => normalize(request.destination) === normalize(captainRouteDestination)).length;
-  const captainPendingCount = captainRequests.filter((request) => request.status === 'pending').length;
-  const captainAcceptedCount = captainRequests.filter((request) => request.status === 'accepted' || request.status === 'present-at-pickup' || request.status === 'ride-started').length;
-  const captainDeclinedCount = captainRequests.filter((request) => request.status === 'declined').length;
-  const acceptedCaptainRequests = captainRequests.filter((request) => ['accepted', 'present-at-pickup', 'ride-started', 'ride-completed'].includes(request.status));
-  const declinedCaptainRequests = captainRequests.filter((request) => request.status === 'declined');
+  const captainVisibleRequests = captainRequests.filter((request) => isCaptainHopAligned(request, captainRouteSource, captainRouteDestination));
+  const sameDestinationCount = captainVisibleRequests.filter((request) => normalize(request.destination) === normalize(captainRouteDestination)).length;
+  const captainPendingCount = captainVisibleRequests.filter((request) => request.status === 'pending').length;
+  const captainAcceptedCount = captainVisibleRequests.filter((request) => request.status === 'accepted' || request.status === 'present-at-pickup' || request.status === 'ride-started').length;
+  const captainDeclinedCount = captainVisibleRequests.filter((request) => request.status === 'declined').length;
+  const acceptedCaptainRequests = captainVisibleRequests.filter((request) => ['accepted', 'present-at-pickup', 'ride-started', 'ride-completed'].includes(request.status));
+  const declinedCaptainRequests = captainVisibleRequests.filter((request) => request.status === 'declined');
   const acceptedRiderTotalAmount = acceptedCaptainRequests.reduce((total, request) => total + request.fare, 0);
   const pocketReducedAmount = acceptedRiderTotalAmount;
   const remainingTargetMoney = Math.max(0, captainRoute.targetMoney - pocketReducedAmount);
-  const riderHopPins = [...new Set(captainRequests.map((request) => request.pickup))];
+  const riderHopPins = [...new Set(captainVisibleRequests.map((request) => `${request.pickup} -> ${request.destination}`))];
 
   return (
     <div className="app">
@@ -3695,7 +3724,7 @@ export default function App() {
                   <div className="rider-request-bar">
                     <div>
                       <span>Multi-hop leg pins only</span>
-                      <strong>{captainRequests.map((request) => `${request.pickup} -> ${request.destination}`).join(' | ')}</strong>
+                      <strong>{riderHopPins.length ? riderHopPins.join(' | ') : 'No route-matching rider hops'}</strong>
                       <small>Safety mode: Captain sees only assigned hop pickup and hop destination, not the rider's full journey.</small>
                     </div>
                     <div>
@@ -3711,14 +3740,14 @@ export default function App() {
                   <div className="captain-decision-grid">
                     <div className="captain-decision-box">
                       <h4>Details Of Riders</h4>
-                      {captainRequests.map((request, index) => (
+                      {captainVisibleRequests.length ? captainVisibleRequests.map((request, index) => (
                         <div className="decision-row" key={`decision-${request.id}`}>
                           <span>{index + 1}. {request.rider}</span>
                           <strong>Hop pickup: {request.pickup}</strong>
                           <strong>Hop destination: {request.destination}</strong>
                           <small>{request.status} . Full rider journey hidden for safety.</small>
                         </div>
-                      ))}
+                      )) : <p>No route-matching rider hops for this Captain route.</p>}
                     </div>
                     <div className="captain-decision-box">
                       <h4>Accepted Riders</h4>
@@ -3750,7 +3779,7 @@ export default function App() {
                   </div>
 
                   <div className="captain-request-list">
-                    {captainRequests.map((request) => (
+                    {captainVisibleRequests.length ? captainVisibleRequests.map((request) => (
                       <div className="captain-request" key={request.id}>
                         <div className="match-header">
                           <div>
@@ -3808,7 +3837,12 @@ export default function App() {
                           <button onClick={() => handleCaptainRideStatus(request.id, 'ride-completed')} disabled={request.status !== 'ride-started'}>End Ride</button>
                         </div>
                       </div>
-                    ))}
+                    )) : (
+                      <div className="captain-request">
+                        <h5>No route-matching rider hops</h5>
+                        <p>This Captain route will show only rider hop pickup and destination points that move toward {captainRouteDestination}.</p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
