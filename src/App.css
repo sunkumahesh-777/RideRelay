@@ -46,7 +46,7 @@ button {
 .brand-lockup {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
 }
 
@@ -100,8 +100,8 @@ button {
 }
 
 .brand-logo {
-  width: 92px;
-  height: 72px;
+  width: 118px;
+  height: 82px;
   padding: 0;
 }
 
@@ -1592,8 +1592,8 @@ button {
 }
 
 .footer-logo {
-  width: 154px;
-  height: 112px;
+  width: 210px;
+  height: 150px;
   margin: 0 auto 18px;
   padding: 0;
 }
@@ -1735,8 +1735,8 @@ button {
   }
 
   .brand-logo {
-    width: 74px;
-    height: 58px;
+    width: 86px;
+    height: 64px;
   }
 
   .brand-title-image {

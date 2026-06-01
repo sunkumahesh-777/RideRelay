@@ -2044,7 +2044,7 @@ export default function App() {
     <div className="app">
       <nav className="navbar">
         <div className="brand-lockup">
-          <img className="brand-logo" src={assetPath('riderelay-logo.jpeg')} alt="RideRelay logo mark" />
+          <img className="brand-logo" src={assetPath('riderelay-logo.png')} alt="RideRelay logo mark" />
           <div className="brand-title-block">
             <h1 className="sr-only">RideRelay</h1>
             <img className="brand-title-image exact-title" src={assetPath('riderelay-name.png')} alt="RideRelay - Travel Smart and Together" />
@@ -2773,7 +2773,7 @@ export default function App() {
       </section>
 
       <footer className="footer">
-        <img className="footer-logo" src={assetPath('riderelay-logo.jpeg')} alt="RideRelay logo mark" />
+        <img className="footer-logo" src={assetPath('riderelay-logo.png')} alt="RideRelay logo mark" />
         <img className="footer-title-image" src={assetPath('riderelay-name.png')} alt="RideRelay - Travel Smart and Together" />
         <p>Affordable eco-friendly ride sharing platform</p>
         <small>2026 RideRelay. Built with React and CSS.</small>
