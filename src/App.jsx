@@ -1178,6 +1178,11 @@ export default function App() {
   });
   const [captainRequests, setCaptainRequests] = useState(initialCaptainRequests);
   const [captainPanelMessage, setCaptainPanelMessage] = useState('Captain can accept rider requests, confirm pickup presence, start ride, and complete ride.');
+  const [captainRoute, setCaptainRoute] = useState({
+    source: 'Ameerpet',
+    destination: 'BHEL',
+    status: 'Route not submitted'
+  });
   const [isProfileEditing, setIsProfileEditing] = useState(false);
   const [profileStatus, setProfileStatus] = useState('Profile details are locked. Click Edit to update.');
   const [riderProfile, setRiderProfile] = useState({
@@ -1998,6 +2003,40 @@ export default function App() {
     setProfileStatus('Profile updated successfully.');
   };
 
+  const handleCaptainRouteChange = (field, value) => {
+    setCaptainRoute((current) => ({
+      ...current,
+      [field]: value,
+      status: 'Draft route. Submit to make this route visible for rider suggestions.'
+    }));
+  };
+
+  const handleCaptainRouteSubmit = (event) => {
+    event.preventDefault();
+
+    const routeSource = resolveLocationArea(captainRoute.source);
+    const routeDestination = resolveLocationArea(captainRoute.destination);
+    const routeDistance = getLegDistanceKm(routeSource, routeDestination);
+
+    if (!captainRoute.source.trim() || !captainRoute.destination.trim()) {
+      setCaptainPanelMessage('Captain route needs both From and Destination locations.');
+      return;
+    }
+
+    if (normalize(routeSource) === normalize(routeDestination)) {
+      setCaptainPanelMessage('Captain From and Destination cannot be the same stop.');
+      return;
+    }
+
+    setCaptainRoute((current) => ({
+      ...current,
+      source: routeSource,
+      destination: routeDestination,
+      status: `Active route submitted. ${routeDistance.toFixed(1)} km path is ready for rider suggestions.`
+    }));
+    setCaptainPanelMessage(`Captain route ${routeSource} to ${routeDestination} is active. RideRelay can suggest it to riders whose pickup or destination aligns with this path.`);
+  };
+
   const handleSignupChange = (field, value) => {
     setSignupForm((current) => ({ ...current, [field]: value }));
   };
@@ -2433,6 +2472,21 @@ export default function App() {
     return renderAuthPage();
   }
 
+  const captainRouteSource = resolveLocationArea(captainRoute.source);
+  const captainRouteDestination = resolveLocationArea(captainRoute.destination);
+  const captainRouteDistance = getLegDistanceKm(captainRouteSource, captainRouteDestination);
+  const riderRoutePickup = resolveLocationArea(pickup);
+  const riderRouteDestination = resolveLocationArea(destination);
+  const captainRouteStops = [captainRouteSource, captainRouteDestination];
+  const captainRouteFitsRider = captainRouteStops.some((stop) => {
+    const normalizedStop = normalize(stop);
+
+    return normalizedStop.includes(normalize(riderRoutePickup))
+      || normalizedStop.includes(normalize(riderRouteDestination))
+      || normalize(riderRoutePickup).includes(normalizedStop)
+      || normalize(riderRouteDestination).includes(normalizedStop);
+  });
+
   return (
     <div className="app">
       <nav className="navbar">
@@ -2445,16 +2499,6 @@ export default function App() {
         </div>
 
         <div className="nav-actions">
-          <div className="time-box">
-            <span>Live Time</span>
-            <strong>{currentTime}</strong>
-          </div>
-          <button className="btn btn-outline" onClick={() => {
-            setAppPage(appPage === 'captain' ? 'rider' : 'captain');
-            setActivePanel(appPage === 'captain' ? 'profile' : 'captain');
-          }}>
-            Open {appPage === 'captain' ? 'Rider' : 'Captain'} Page
-          </button>
           <button className="btn btn-primary" onClick={handleLogout}>Logout</button>
         </div>
       </nav>
@@ -3306,6 +3350,62 @@ export default function App() {
                     <span>{captainProfile.email}</span>
                   </div>
                 </div>
+
+                <form className="panel-card captain-route-card" onSubmit={handleCaptainRouteSubmit}>
+                  <div className="route-card-heading">
+                    <div>
+                      <h3>Captain Route Setup</h3>
+                      <p>Enter the Captain travel path. RideRelay uses this route to suggest suitable rider requests.</p>
+                    </div>
+                    <strong>{captainRouteDistance.toFixed(1)} km</strong>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="captain-source">From Location</label>
+                      <input
+                        id="captain-source"
+                        list="captain-stops"
+                        value={captainRoute.source}
+                        onChange={(event) => handleCaptainRouteChange('source', event.target.value)}
+                        placeholder="Captain starting location"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="captain-destination">Destination</label>
+                      <input
+                        id="captain-destination"
+                        list="captain-stops"
+                        value={captainRoute.destination}
+                        onChange={(event) => handleCaptainRouteChange('destination', event.target.value)}
+                        placeholder="Captain destination"
+                      />
+                    </div>
+                  </div>
+
+                  <datalist id="captain-stops">
+                    {availableStops.map((stop) => (
+                      <option value={stop} key={`captain-${stop}`} />
+                    ))}
+                  </datalist>
+
+                  <div className="captain-route-preview">
+                    <div>
+                      <span>Active route</span>
+                      <strong>{captainRouteSource} {'->'} {captainRouteDestination}</strong>
+                    </div>
+                    <div>
+                      <span>Rider route fit</span>
+                      <strong>{captainRouteFitsRider ? 'Suitable for current rider search' : 'Not matching current rider search'}</strong>
+                    </div>
+                    <div>
+                      <span>Status</span>
+                      <strong>{captainRoute.status}</strong>
+                    </div>
+                  </div>
+
+                  <button className="panel-action" type="submit">Update Captain Route</button>
+                </form>
 
                 <div className="panel-card safety-list">
                   <h3>Captain API Status</h3>

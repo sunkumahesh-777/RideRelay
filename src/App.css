@@ -1712,6 +1712,51 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.captain-route-card {
+  display: grid;
+  gap: 18px;
+}
+
+.route-card-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.route-card-heading strong {
+  color: #fde68a;
+  font-size: 28px;
+  white-space: nowrap;
+}
+
+.captain-route-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.captain-route-preview div {
+  min-height: 92px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  padding: 14px;
+}
+
+.captain-route-preview span {
+  display: block;
+  color: #aab6ba;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.captain-route-preview strong {
+  display: block;
+  color: #ffffff;
+  line-height: 1.35;
+}
+
 .captain-requests-card {
   grid-column: 1 / -1;
 }
@@ -2091,6 +2136,10 @@ button {
 
   .signup-shell,
   .captain-panel-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .captain-route-preview {
     grid-template-columns: 1fr;
   }
 
