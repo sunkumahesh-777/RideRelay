@@ -1962,6 +1962,13 @@ button {
   line-height: 1.4;
 }
 
+.rider-request-bar small {
+  display: block;
+  color: #fde68a;
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
 .rider-request-bar input {
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.22);
