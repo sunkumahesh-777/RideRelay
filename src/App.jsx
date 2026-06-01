@@ -1158,6 +1158,7 @@ export default function App() {
   const [selectedLocationId, setSelectedLocationId] = useState(1);
   const [locationSearch, setLocationSearch] = useState('');
   const [locationCategory, setLocationCategory] = useState('All');
+  const [appPage, setAppPage] = useState('auth');
   const [signupRole, setSignupRole] = useState('Rider');
   const [signupMethod, setSignupMethod] = useState('Email');
   const [signupForm, setSignupForm] = useState(signupFields);
@@ -2062,6 +2063,20 @@ export default function App() {
     }
 
     setAuthStatus(`${signupRole} signup created locally. Ready to send payload to ${apiPreview.signup}.`);
+    setActivePanel(signupRole === 'Captain' ? 'captain' : 'profile');
+    setAppPage(signupRole === 'Captain' ? 'captain' : 'rider');
+  };
+
+  const handleLoginOpen = (role) => {
+    setSignupRole(role);
+    setActivePanel(role === 'Captain' ? 'captain' : 'profile');
+    setAuthStatus(`${role} login successful for demo. Real backend will verify email/Gmail token first.`);
+    setAppPage(role === 'Captain' ? 'captain' : 'rider');
+  };
+
+  const handleLogout = () => {
+    setAppPage('auth');
+    setAuthStatus('Logged out. Choose Rider or Captain to continue.');
   };
 
   const updateCaptainRequest = (requestId, updates, message) => {
@@ -2106,7 +2121,7 @@ export default function App() {
   };
 
   const scrollToSignup = () => {
-    document.getElementById('signup-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setAppPage('auth');
   };
 
   const handlePaymentMethod = (method) => {
@@ -2229,6 +2244,147 @@ export default function App() {
     );
   };
 
+  const renderAuthPage = () => (
+    <div className="app auth-app">
+      <nav className="navbar">
+        <div className="brand-lockup">
+          <img className="brand-logo" src={assetPath('riderelay-logo.png')} alt="RideRelay logo mark" />
+          <div className="brand-title-block">
+            <h1 className="sr-only">RideRelay</h1>
+            <img className="brand-title-image exact-title" src={assetPath('riderelay-name.png')} alt="RideRelay - Travel Smart and Together" />
+          </div>
+        </div>
+        <div className="nav-actions">
+          <button className="btn btn-outline" onClick={() => handleLoginOpen('Rider')}>Rider Login</button>
+          <button className="btn btn-primary" onClick={() => handleLoginOpen('Captain')}>Captain Login</button>
+        </div>
+      </nav>
+
+      <section className="signup-section auth-screen" id="signup-panel">
+        <div className="section-title compact">
+          <h2>
+            Login or Signup <span>RideRelay</span>
+          </h2>
+          <p>Separate entry page for Rider and Captain. After login/signup, RideRelay opens the correct page.</p>
+        </div>
+
+        <div className="signup-shell">
+          <form className="signup-card" onSubmit={handleSignupSubmit}>
+            <div className="mode-switch" aria-label="Choose account role">
+              {['Rider', 'Captain'].map((role) => (
+                <button className={signupRole === role ? 'active' : ''} key={role} onClick={() => setSignupRole(role)} type="button">
+                  {role}
+                </button>
+              ))}
+            </div>
+
+            <div className="auth-actions">
+              <button className={signupMethod === 'Email' ? 'active' : ''} onClick={() => setSignupMethod('Email')} type="button">Email Signup</button>
+              <button className={signupMethod === 'Gmail' ? 'active' : ''} onClick={handleContinueWithGmail} type="button">Continue with Gmail</button>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="auth-name">Full Name</label>
+                <input id="auth-name" value={signupForm.fullName} onChange={(event) => handleSignupChange('fullName', event.target.value)} placeholder="Enter valid full name" />
+              </div>
+              <div className="form-group">
+                <label htmlFor="auth-phone">Phone Number</label>
+                <input id="auth-phone" value={signupForm.phone} onChange={(event) => handleSignupChange('phone', event.target.value)} placeholder="+91 mobile number" />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="auth-email">Email / Gmail</label>
+                <input id="auth-email" type="email" value={signupForm.email} onChange={(event) => handleSignupChange('email', event.target.value)} placeholder="name@example.com" />
+              </div>
+              <div className="form-group">
+                <label htmlFor="auth-password">Password</label>
+                <input id="auth-password" type="password" value={signupForm.password} onChange={(event) => handleSignupChange('password', event.target.value)} placeholder={signupMethod === 'Gmail' ? 'Handled by Gmail login' : 'Create password'} disabled={signupMethod === 'Gmail'} />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="auth-gender">Gender</label>
+                <select id="auth-gender" value={signupForm.gender} onChange={(event) => handleSignupChange('gender', event.target.value)}>
+                  <option>Female</option>
+                  <option>Male</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label htmlFor="auth-home">Home / Primary Stop</label>
+                <input id="auth-home" list="stops" value={signupForm.homeStop} onChange={(event) => handleSignupChange('homeStop', event.target.value)} placeholder="Ameerpet, KPHB, Charminar..." />
+              </div>
+            </div>
+
+            {signupRole === 'Rider' && (
+              <div className="form-group">
+                <label htmlFor="auth-emergency">Emergency Contact</label>
+                <input id="auth-emergency" value={signupForm.emergencyContact} onChange={(event) => handleSignupChange('emergencyContact', event.target.value)} placeholder="Family member phone number" />
+              </div>
+            )}
+
+            {signupRole === 'Captain' && (
+              <div className="captain-doc-fields">
+                <div className="form-row">
+                  <div className="form-group">
+                    <label htmlFor="auth-vehicle">Vehicle Type</label>
+                    <select id="auth-vehicle" value={signupForm.vehicleType} onChange={(event) => handleSignupChange('vehicleType', event.target.value)}>
+                      <option>Bike</option>
+                      <option>Car</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="auth-vehicle-number">Vehicle Number</label>
+                    <input id="auth-vehicle-number" value={signupForm.vehicleNumber} onChange={(event) => handleSignupChange('vehicleNumber', event.target.value)} placeholder="TS09 RR 1234" />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label htmlFor="auth-license">Driving License</label>
+                    <input id="auth-license" value={signupForm.licenseNumber} onChange={(event) => handleSignupChange('licenseNumber', event.target.value)} placeholder="Valid license number" />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="auth-preference">Ride Preference</label>
+                    <select id="auth-preference" value={signupForm.preferredRider} onChange={(event) => handleSignupChange('preferredRider', event.target.value)}>
+                      <option>Any verified rider</option>
+                      <option>Female rider only</option>
+                      <option>Known route riders</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button className="search-btn" type="submit">Create {signupRole} Account & Open {signupRole} Page</button>
+          </form>
+
+          <div className="api-card">
+            <span>Page Flow</span>
+            <h3>{signupRole} Login / Signup</h3>
+            <p>{authStatus}</p>
+            <div className="auth-open-actions">
+              <button onClick={() => handleLoginOpen('Rider')}>Open Rider Page</button>
+              <button onClick={() => handleLoginOpen('Captain')}>Open Captain Page</button>
+            </div>
+            <div className="api-list">
+              <code>{apiPreview.signup}</code>
+              <code>{apiPreview.gmail}</code>
+              <code>{apiPreview.captainRequests}</code>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+
+  if (appPage === 'auth') {
+    return renderAuthPage();
+  }
+
   return (
     <div className="app">
       <nav className="navbar">
@@ -2245,11 +2401,17 @@ export default function App() {
             <span>Live Time</span>
             <strong>{currentTime}</strong>
           </div>
-          <button className="btn btn-outline" onClick={() => setActivePanel('profile')}>Profile</button>
-          <button className="btn btn-primary" onClick={scrollToSignup}>Signup</button>
+          <button className="btn btn-outline" onClick={() => {
+            setAppPage(appPage === 'captain' ? 'rider' : 'captain');
+            setActivePanel(appPage === 'captain' ? 'profile' : 'captain');
+          }}>
+            Open {appPage === 'captain' ? 'Rider' : 'Captain'} Page
+          </button>
+          <button className="btn btn-primary" onClick={handleLogout}>Logout</button>
         </div>
       </nav>
 
+      {appPage === 'rider' && (
       <main className="hero">
         <section className="hero-content">
           <div className="badge">Affordable community ride sharing</div>
@@ -2728,7 +2890,9 @@ export default function App() {
           </div>
         </section>
       </main>
+      )}
 
+      {false && (
       <section className="signup-section" id="signup-panel">
         <div className="section-title compact">
           <h2>
@@ -2857,26 +3021,28 @@ export default function App() {
           </div>
         </div>
       </section>
+      )}
 
       <section className="rider-dashboard" id="rider-panel">
         <div className="section-title">
           <h2>
-            Rider <span>Control Panel</span>
+            {appPage === 'captain' ? 'Captain' : 'Rider'} <span>Control Panel</span>
           </h2>
-          <p>Manage profile, payment, safety, offers, and trip activity in one place.</p>
+          <p>{appPage === 'captain' ? 'Manage rider requests, pickup presence, start ride, and completion from one Captain page.' : 'Manage profile, payment, safety, offers, and trip activity in one place.'}</p>
         </div>
 
         <div className="dashboard-shell">
           <aside className="panel-tabs" aria-label="Rider panels">
-            {[
-              ['profile', 'Profile'],
-              ['payments', 'Payments'],
-              ['trips', 'Trips'],
-              ['safety', 'Safety'],
-              ['locations', 'Locations'],
-              ['captain', 'Captain Panel'],
-              ['offers', 'Offers']
-            ].map(([key, label]) => (
+            {(appPage === 'captain'
+              ? [['captain', 'Captain Panel']]
+              : [
+                ['profile', 'Profile'],
+                ['payments', 'Payments'],
+                ['trips', 'Trips'],
+                ['safety', 'Safety'],
+                ['locations', 'Locations'],
+                ['offers', 'Offers']
+              ]).map(([key, label]) => (
               <button
                 className={activePanel === key ? 'active' : ''}
                 key={key}
@@ -3138,6 +3304,7 @@ export default function App() {
         </div>
       </section>
 
+      {appPage === 'rider' && (
       <section className="features">
         <div className="section-title">
           <h2>
@@ -3166,6 +3333,7 @@ export default function App() {
           </div>
         </div>
       </section>
+      )}
 
       <footer className="footer">
         <img className="footer-logo" src={assetPath('riderelay-logo.png')} alt="RideRelay logo mark" />

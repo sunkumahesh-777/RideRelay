@@ -1259,8 +1259,16 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.auth-open-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+
 .mode-switch button,
 .auth-actions button,
+.auth-open-actions button,
 .captain-actions button {
   border: 1px solid rgba(148, 163, 184, 0.22);
   background: rgba(255, 255, 255, 0.06);
@@ -1925,6 +1933,7 @@ button {
 
   .auth-actions,
   .mode-switch,
+  .auth-open-actions,
   .captain-actions {
     grid-template-columns: 1fr;
   }
