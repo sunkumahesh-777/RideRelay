@@ -1565,6 +1565,10 @@ button {
   margin: 10px 0 12px;
 }
 
+.hidden-api-card {
+  display: none;
+}
+
 .api-list,
 .signup-records {
   display: grid;
@@ -1770,6 +1774,10 @@ button {
   grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
 }
 
+.rider-section-grid {
+  grid-template-columns: 1fr;
+}
+
 .large-qr {
   width: 84px;
   height: 84px;
@@ -1897,6 +1905,36 @@ button {
   padding: 8px 12px;
   font-weight: 800;
   font-size: 13px;
+}
+
+.accepted-money-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.accepted-money-summary div {
+  border-radius: 8px;
+  background: rgba(253, 230, 138, 0.08);
+  border: 1px solid rgba(253, 230, 138, 0.18);
+  padding: 15px;
+}
+
+.accepted-money-summary span,
+.accepted-money-summary strong {
+  display: block;
+}
+
+.accepted-money-summary span {
+  color: #aab6ba;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.accepted-money-summary strong {
+  color: #fde68a;
+  font-size: 22px;
 }
 
 .rider-request-bar {
@@ -2534,6 +2572,10 @@ button {
   }
 
   .captain-decision-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .accepted-money-summary {
     grid-template-columns: 1fr;
   }
 

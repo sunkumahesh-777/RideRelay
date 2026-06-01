@@ -700,6 +700,10 @@ const apiPreview = {
   rideStatus: 'PATCH /api/rides/:id/status'
 };
 
+function getCaptainTargetMoney(distanceKm) {
+  return Math.max(80, Math.round(distanceKm * 10));
+}
+
 function normalize(value) {
   return value.trim().toLowerCase();
 }
@@ -1195,6 +1199,7 @@ export default function App() {
   const [captainChatMessage, setCaptainChatMessage] = useState('I received your request. Please wait near the pickup pin.');
   const [captainPaymentStatus, setCaptainPaymentStatus] = useState('Payment receiving details are editable.');
   const [riderChatDrafts, setRiderChatDrafts] = useState({});
+  const [paidCaptainRequestIds, setPaidCaptainRequestIds] = useState([]);
   const [captainRouteAlert, setCaptainRouteAlert] = useState('Submit Captain route to send route alert to matching rider dialogue boxes.');
   const [isQrPreviewOpen, setIsQrPreviewOpen] = useState(false);
   const [isProfileEditing, setIsProfileEditing] = useState(false);
@@ -2042,11 +2047,21 @@ export default function App() {
   };
 
   const handleCaptainRouteChange = (field, value) => {
-    setCaptainRoute((current) => ({
-      ...current,
-      [field]: field === 'vacantSeats' || field === 'targetMoney' ? Number(value) : value,
-      status: 'Draft route. Submit to make this route visible for rider suggestions.'
-    }));
+    setCaptainRoute((current) => {
+      const nextRoute = {
+        ...current,
+        [field]: field === 'vacantSeats' || field === 'targetMoney' ? Number(value) : value,
+        status: 'Draft route. Submit to make this route visible for rider suggestions.'
+      };
+
+      if (field === 'source' || field === 'destination') {
+        const from = resolveLocationArea(field === 'source' ? value : current.source);
+        const to = resolveLocationArea(field === 'destination' ? value : current.destination);
+        nextRoute.targetMoney = getCaptainTargetMoney(getLegDistanceKm(from, to));
+      }
+
+      return nextRoute;
+    });
     setCaptainRouteAlert('Route changes are in draft. Submit to alert riders.');
   };
 
@@ -2109,15 +2124,17 @@ export default function App() {
       return;
     }
 
+    const suggestedTarget = getCaptainTargetMoney(routeDistance);
+
     setCaptainRoute((current) => ({
       ...current,
       source: routeSource,
       destination: routeDestination,
       vacantSeats: Math.max(1, current.vacantSeats || 1),
-      targetMoney: Math.max(0, current.targetMoney || 0),
-      status: `Active route submitted. ${routeDistance.toFixed(1)} km path, ${Math.max(1, captainRoute.vacantSeats || 1)} vacant seat${Number(captainRoute.vacantSeats) === 1 ? '' : 's'}, Rs ${Math.max(0, captainRoute.targetMoney || 0)} target.`
+      targetMoney: suggestedTarget,
+      status: `Active route submitted. ${routeDistance.toFixed(1)} km path, ${Math.max(1, captainRoute.vacantSeats || 1)} vacant seat${Number(captainRoute.vacantSeats) === 1 ? '' : 's'}, Rs ${suggestedTarget} target.`
     }));
-    const routeMessage = `Captain route ${routeSource} to ${routeDestination} submitted with ${Math.max(1, captainRoute.vacantSeats || 1)} vacant seat${Number(captainRoute.vacantSeats) === 1 ? '' : 's'} and Rs ${Math.max(0, captainRoute.targetMoney || 0)} pocket target. Matching riders will receive this route alert.`;
+    const routeMessage = `Captain route ${routeSource} to ${routeDestination} submitted with ${Math.max(1, captainRoute.vacantSeats || 1)} vacant seat${Number(captainRoute.vacantSeats) === 1 ? '' : 's'} and Rs ${suggestedTarget} pocket target. Matching riders will receive this route alert.`;
     setCaptainPanelMessage(routeMessage);
     setCaptainRouteAlert(routeMessage);
   };
@@ -2298,6 +2315,15 @@ export default function App() {
       },
       `${captainProfile.name} accepted ${request?.rider ?? 'rider'} request. Rider alert sent for pickup verification.`
     );
+  };
+
+  const handleCaptainRiderPayment = (requestId) => {
+    const request = captainRequests.find((item) => item.id === requestId);
+
+    setPaidCaptainRequestIds((current) => (
+      current.includes(requestId) ? current : [...current, requestId]
+    ));
+    setCaptainPanelMessage(`Payment received from ${request?.rider ?? 'rider'}. Target money balance updated.`);
   };
 
   const handleCaptainDecline = (requestId) => {
@@ -2593,6 +2619,11 @@ export default function App() {
   const captainDeclinedCount = captainRequests.filter((request) => request.status === 'declined').length;
   const acceptedCaptainRequests = captainRequests.filter((request) => ['accepted', 'present-at-pickup', 'ride-started', 'ride-completed'].includes(request.status));
   const declinedCaptainRequests = captainRequests.filter((request) => request.status === 'declined');
+  const acceptedRiderTotalAmount = acceptedCaptainRequests.reduce((total, request) => total + request.fare, 0);
+  const paidRiderTotalAmount = captainRequests
+    .filter((request) => paidCaptainRequestIds.includes(request.id))
+    .reduce((total, request) => total + request.fare, 0);
+  const remainingTargetMoney = Math.max(0, captainRoute.targetMoney - paidRiderTotalAmount);
   const riderHopPins = [...new Set(captainRequests.flatMap((request) => [request.pickup, request.destination]))];
 
   return (
@@ -3200,10 +3231,10 @@ export default function App() {
             <button className="search-btn" type="submit">Create {signupRole} Account</button>
           </form>
 
-          <div className="api-card">
-            <span>Dynamic API Flow</span>
-            <h3>{apiPreview.signup}</h3>
-            <p>{authStatus}</p>
+            <div className="api-card hidden-api-card">
+              <span>Dynamic API Flow</span>
+              <h3>{apiPreview.signup}</h3>
+              <p>{authStatus}</p>
             <div className="api-list">
               <code>{apiPreview.gmail}</code>
               <code>{apiPreview.captainRequests}</code>
@@ -3234,7 +3265,7 @@ export default function App() {
         <div className="dashboard-shell">
           <aside className="panel-tabs" aria-label="Rider panels">
             {(appPage === 'captain'
-              ? [['captain', 'Captain Panel'], ['captain-bank', 'Bank Details']]
+              ? [['captain', 'Captain Panel'], ['captain-riders', 'Rider Section'], ['captain-bank', 'Bank Details']]
               : [
                 ['profile', 'Profile'],
                 ['payments', 'Payments'],
@@ -3511,9 +3542,10 @@ export default function App() {
                         type="number"
                         min="0"
                         value={captainRoute.targetMoney}
-                        onChange={(event) => handleCaptainRouteChange('targetMoney', event.target.value)}
+                        readOnly
                         placeholder="Expected amount"
                       />
+                      <small className="input-help">Auto-calculated from distance. Minimum target is Rs 80.</small>
                     </div>
                   </div>
 
@@ -3552,7 +3584,7 @@ export default function App() {
                           source: route.stops[0],
                           destination: route.stops[route.stops.length - 1],
                           vacantSeats: captainRoute.vacantSeats,
-                          targetMoney: captainRoute.targetMoney,
+                          targetMoney: getCaptainTargetMoney(route.distanceKm),
                           status: `${route.title} selected. Submit to publish this route.`
                         })}
                       >
@@ -3565,15 +3597,11 @@ export default function App() {
 
                   <button className="panel-action" type="submit">Update Captain Route</button>
                 </form>
+              </div>
+            )}
 
-                <div className="panel-card safety-list">
-                  <h3>Captain API Status</h3>
-                  <p>{captainPanelMessage}</p>
-                  <span>{apiPreview.captainRequests}</span>
-                  <span>{apiPreview.captainDecision}</span>
-                  <span>{apiPreview.rideStatus}</span>
-                </div>
-
+            {activePanel === 'captain-riders' && (
+              <div className="panel-grid rider-section-grid">
                 <div className="panel-card captain-requests-card">
                   <div className="request-card-heading">
                     <div>
@@ -3585,6 +3613,21 @@ export default function App() {
                       <span>{captainAcceptedCount} active</span>
                       <span>{captainDeclinedCount} declined</span>
                       <span>{captainRoute.vacantSeats} vacant</span>
+                    </div>
+                  </div>
+
+                  <div className="accepted-money-summary">
+                    <div>
+                      <span>Accepted rider total</span>
+                      <strong>Rs {acceptedRiderTotalAmount}</strong>
+                    </div>
+                    <div>
+                      <span>Paid amount</span>
+                      <strong>Rs {paidRiderTotalAmount}</strong>
+                    </div>
+                    <div>
+                      <span>Remaining target</span>
+                      <strong>Rs {remainingTargetMoney}</strong>
                     </div>
                   </div>
 
@@ -3620,7 +3663,10 @@ export default function App() {
                         <div className="decision-row accepted" key={`accepted-${request.id}`}>
                           <span>{request.rider}</span>
                           <strong>{request.pickup} pickup . Rs {request.fare}</strong>
-                          <small>{request.captainMessage ?? 'Waiting for Captain alert.'}</small>
+                          <small>{paidCaptainRequestIds.includes(request.id) ? 'Payment received and deducted from target.' : request.captainMessage ?? 'Waiting for Captain alert.'}</small>
+                          <button className="btn-mini" onClick={() => handleCaptainRiderPayment(request.id)} disabled={paidCaptainRequestIds.includes(request.id)}>
+                            {paidCaptainRequestIds.includes(request.id) ? 'Paid' : 'Mark Paid'}
+                          </button>
                         </div>
                       )) : <p>No accepted riders yet.</p>}
                     </div>
