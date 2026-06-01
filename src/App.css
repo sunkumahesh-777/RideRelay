@@ -1253,6 +1253,16 @@ button {
   padding-top: 42px;
 }
 
+.auth-brand-only {
+  justify-content: center;
+  padding-top: 28px;
+  padding-bottom: 28px;
+}
+
+.auth-brand-only .brand-lockup {
+  justify-content: center;
+}
+
 .auth-screen .section-title {
   position: static;
   width: min(420px, calc(100% - 40px));
@@ -1310,6 +1320,10 @@ button {
   margin-top: 0;
 }
 
+.auth-screen .auth-single-shell {
+  width: min(620px, 100%);
+}
+
 .signup-card,
 .api-card {
   background: rgba(9, 23, 29, 0.86);
@@ -1329,6 +1343,21 @@ button {
 
 .auth-screen .signup-card {
   padding-top: 34px;
+}
+
+.auth-entry-card {
+  margin: 0 auto;
+}
+
+.auth-card-title h2 {
+  color: #ffffff;
+}
+
+.auth-status-line {
+  margin-top: 16px;
+  text-align: center;
+  color: rgba(226, 232, 240, 0.76);
+  font-size: 13px;
 }
 
 .auth-screen .api-card {
@@ -1450,6 +1479,14 @@ button {
   width: 100%;
   margin-top: 18px;
   padding: 10px;
+}
+
+.field-error {
+  display: block;
+  color: #fca5a5;
+  margin-top: 7px;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .api-card span,

@@ -1159,9 +1159,11 @@ export default function App() {
   const [locationSearch, setLocationSearch] = useState('');
   const [locationCategory, setLocationCategory] = useState('All');
   const [appPage, setAppPage] = useState('auth');
+  const [authMode, setAuthMode] = useState('login');
   const [signupRole, setSignupRole] = useState('Rider');
   const [signupMethod, setSignupMethod] = useState('Email');
   const [signupForm, setSignupForm] = useState(signupFields);
+  const [authErrors, setAuthErrors] = useState({});
   const [signupRecords, setSignupRecords] = useState([]);
   const [authStatus, setAuthStatus] = useState('Create a Rider or Captain account. Backend API payload is prepared after submit.');
   const [captainProfile, setCaptainProfile] = useState({
@@ -2002,23 +2004,66 @@ export default function App() {
     setAuthStatus(`Gmail selected for ${signupRole}. In backend this will call ${apiPreview.gmail}.`);
   };
 
+  const validateEmail = (value) => /\S+@\S+\.\S+/.test(value);
+
+  const validateAuthForm = (mode) => {
+    const errors = {};
+
+    if (!validateEmail(signupForm.email)) {
+      errors.email = 'Enter a valid email address.';
+    }
+
+    if (!signupForm.password || signupForm.password.length < 6) {
+      errors.password = 'Password must be at least 6 characters.';
+    }
+
+    if (mode === 'signup') {
+      if (!signupForm.fullName.trim()) {
+        errors.fullName = 'Full name is required.';
+      }
+
+      if (!/^[+]?\d[\d\s-]{8,}$/.test(signupForm.phone.trim())) {
+        errors.phone = 'Enter a valid phone number.';
+      }
+
+      if (!signupForm.homeStop.trim()) {
+        errors.homeStop = 'Primary stop is required.';
+      }
+
+      if (signupRole === 'Rider' && !/^[+]?\d[\d\s-]{8,}$/.test(signupForm.emergencyContact.trim())) {
+        errors.emergencyContact = 'Emergency contact is required for rider.';
+      }
+
+      if (signupRole === 'Captain') {
+        if (!signupForm.vehicleNumber.trim()) {
+          errors.vehicleNumber = 'Vehicle number is required for captain.';
+        }
+
+        if (!signupForm.licenseNumber.trim()) {
+          errors.licenseNumber = 'Driving license is required for captain.';
+        }
+      }
+    }
+
+    setAuthErrors(errors);
+    return !Object.keys(errors).length;
+  };
+
+  const handleLoginSubmit = (event) => {
+    event.preventDefault();
+
+    if (!validateAuthForm('login')) {
+      setAuthStatus('Please fix login errors before continuing.');
+      return;
+    }
+
+    handleLoginOpen(signupRole);
+  };
+
   const handleSignupSubmit = (event) => {
     event.preventDefault();
 
-    const requiredValues = [
-      signupForm.fullName,
-      signupForm.email,
-      signupForm.phone,
-      signupForm.city,
-      signupForm.homeStop,
-      signupMethod === 'Email' ? signupForm.password : 'gmail-auth'
-    ];
-
-    if (signupRole === 'Captain') {
-      requiredValues.push(signupForm.vehicleNumber, signupForm.licenseNumber);
-    }
-
-    if (requiredValues.some((value) => !String(value).trim())) {
+    if (!validateAuthForm('signup')) {
       setAuthStatus(`Please complete all valid ${signupRole} details before continuing.`);
       return;
     }
@@ -2069,6 +2114,7 @@ export default function App() {
 
   const handleLoginOpen = (role) => {
     setSignupRole(role);
+    setAuthErrors({});
     setActivePanel(role === 'Captain' ? 'captain' : 'profile');
     setAuthStatus(`${role} login successful for demo. Real backend will verify email/Gmail token first.`);
     setAppPage(role === 'Captain' ? 'captain' : 'rider');
@@ -2076,6 +2122,7 @@ export default function App() {
 
   const handleLogout = () => {
     setAppPage('auth');
+    setAuthMode('login');
     setAuthStatus('Logged out. Choose Rider or Captain to continue.');
   };
 
@@ -2244,161 +2291,152 @@ export default function App() {
     );
   };
 
-  const renderAuthPage = () => (
-    <div className="app auth-app">
-      <nav className="navbar">
-        <div className="brand-lockup">
-          <img className="brand-logo" src={assetPath('riderelay-logo.png')} alt="RideRelay logo mark" />
-          <div className="brand-title-block">
-            <h1 className="sr-only">RideRelay</h1>
-            <img className="brand-title-image exact-title" src={assetPath('riderelay-name.png')} alt="RideRelay - Travel Smart and Together" />
+  const renderAuthPage = () => {
+    const isSignup = authMode === 'signup';
+
+    return (
+      <div className="app auth-app">
+        <nav className="navbar auth-brand-only">
+          <div className="brand-lockup">
+            <img className="brand-logo" src={assetPath('riderelay-logo.png')} alt="RideRelay logo mark" />
+            <div className="brand-title-block">
+              <h1 className="sr-only">RideRelay</h1>
+              <img className="brand-title-image exact-title" src={assetPath('riderelay-name.png')} alt="RideRelay - Travel Smart and Together" />
+            </div>
           </div>
-        </div>
-        <div className="nav-actions">
-          <button className="btn btn-outline" onClick={() => handleLoginOpen('Rider')}>Rider Login</button>
-          <button className="btn btn-primary" onClick={() => handleLoginOpen('Captain')}>Captain Login</button>
-        </div>
-      </nav>
+        </nav>
 
-      <section className="signup-section auth-screen" id="signup-panel">
-        <div className="signup-shell">
-          <form className="signup-card" onSubmit={handleSignupSubmit}>
-            <div className="section-title compact auth-card-title">
-              <span className="auth-orbit">
-                <img src={assetPath('riderelay-logo.png')} alt="RideRelay logo mark" />
-              </span>
-              <h2>
-                Welcome back!
-              </h2>
-              <p>Sign in as Rider or Captain to continue your shared journey.</p>
-            </div>
-
-            <div className="mode-switch" aria-label="Choose account role">
-              {['Rider', 'Captain'].map((role) => (
-                <button className={signupRole === role ? 'active' : ''} key={role} onClick={() => setSignupRole(role)} type="button">
-                  {role}
-                </button>
-              ))}
-            </div>
-
-            <div className="auth-actions">
-              <button className={signupMethod === 'Email' ? 'active' : ''} onClick={() => setSignupMethod('Email')} type="button">Email Signup</button>
-              <button className={signupMethod === 'Gmail' ? 'active' : ''} onClick={handleContinueWithGmail} type="button">Continue with Gmail</button>
-            </div>
-
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="auth-name">Full Name</label>
-                <input id="auth-name" value={signupForm.fullName} onChange={(event) => handleSignupChange('fullName', event.target.value)} placeholder="Enter valid full name" />
+        <section className="signup-section auth-screen" id="signup-panel">
+          <div className="signup-shell auth-single-shell">
+            <form className="signup-card auth-entry-card" onSubmit={isSignup ? handleSignupSubmit : handleLoginSubmit}>
+              <div className="section-title compact auth-card-title">
+                <h2>{isSignup ? 'Create account' : 'Welcome back!'}</h2>
+                <p>{isSignup ? 'Complete valid details to open your Rider or Captain page.' : 'Login to your Rider or Captain account.'}</p>
               </div>
-              <div className="form-group">
-                <label htmlFor="auth-phone">Phone Number</label>
-                <input id="auth-phone" value={signupForm.phone} onChange={(event) => handleSignupChange('phone', event.target.value)} placeholder="+91 mobile number" />
-              </div>
-            </div>
 
-            <div className="form-row">
+              <div className="mode-switch" aria-label="Choose account role">
+                {['Rider', 'Captain'].map((role) => (
+                  <button className={signupRole === role ? 'active' : ''} key={role} onClick={() => setSignupRole(role)} type="button">
+                    {role}
+                  </button>
+                ))}
+              </div>
+
               <div className="form-group">
                 <label htmlFor="auth-email">Email / Gmail</label>
                 <input id="auth-email" type="email" value={signupForm.email} onChange={(event) => handleSignupChange('email', event.target.value)} placeholder="name@example.com" />
+                {authErrors.email && <small className="field-error">{authErrors.email}</small>}
               </div>
+
               <div className="form-group">
                 <label htmlFor="auth-password">Password</label>
-                <input id="auth-password" type="password" value={signupForm.password} onChange={(event) => handleSignupChange('password', event.target.value)} placeholder={signupMethod === 'Gmail' ? 'Handled by Gmail login' : 'Create password'} disabled={signupMethod === 'Gmail'} />
+                <input id="auth-password" type="password" value={signupForm.password} onChange={(event) => handleSignupChange('password', event.target.value)} placeholder="Enter password" />
+                {authErrors.password && <small className="field-error">{authErrors.password}</small>}
               </div>
-            </div>
 
-            <div className="form-row">
-              <div className="form-group">
-                <label htmlFor="auth-gender">Gender</label>
-                <select id="auth-gender" value={signupForm.gender} onChange={(event) => handleSignupChange('gender', event.target.value)}>
-                  <option>Female</option>
-                  <option>Male</option>
-                  <option>Other</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label htmlFor="auth-home">Home / Primary Stop</label>
-                <input id="auth-home" list="stops" value={signupForm.homeStop} onChange={(event) => handleSignupChange('homeStop', event.target.value)} placeholder="Ameerpet, KPHB, Charminar..." />
-              </div>
-            </div>
-
-            {signupRole === 'Rider' && (
-              <div className="form-group">
-                <label htmlFor="auth-emergency">Emergency Contact</label>
-                <input id="auth-emergency" value={signupForm.emergencyContact} onChange={(event) => handleSignupChange('emergencyContact', event.target.value)} placeholder="Family member phone number" />
-              </div>
-            )}
-
-            {signupRole === 'Captain' && (
-              <div className="captain-doc-fields">
-                <div className="form-row">
-                  <div className="form-group">
-                    <label htmlFor="auth-vehicle">Vehicle Type</label>
-                    <select id="auth-vehicle" value={signupForm.vehicleType} onChange={(event) => handleSignupChange('vehicleType', event.target.value)}>
-                      <option>Bike</option>
-                      <option>Car</option>
-                    </select>
+              {isSignup && (
+                <>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="auth-name">Full Name</label>
+                      <input id="auth-name" value={signupForm.fullName} onChange={(event) => handleSignupChange('fullName', event.target.value)} placeholder="Enter valid full name" />
+                      {authErrors.fullName && <small className="field-error">{authErrors.fullName}</small>}
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="auth-phone">Phone Number</label>
+                      <input id="auth-phone" value={signupForm.phone} onChange={(event) => handleSignupChange('phone', event.target.value)} placeholder="+91 mobile number" />
+                      {authErrors.phone && <small className="field-error">{authErrors.phone}</small>}
+                    </div>
                   </div>
-                  <div className="form-group">
-                    <label htmlFor="auth-vehicle-number">Vehicle Number</label>
-                    <input id="auth-vehicle-number" value={signupForm.vehicleNumber} onChange={(event) => handleSignupChange('vehicleNumber', event.target.value)} placeholder="TS09 RR 1234" />
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="auth-gender">Gender</label>
+                      <select id="auth-gender" value={signupForm.gender} onChange={(event) => handleSignupChange('gender', event.target.value)}>
+                        <option>Female</option>
+                        <option>Male</option>
+                        <option>Other</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="auth-home">Home / Primary Stop</label>
+                      <input id="auth-home" list="stops" value={signupForm.homeStop} onChange={(event) => handleSignupChange('homeStop', event.target.value)} placeholder="Ameerpet, KPHB, Charminar..." />
+                      {authErrors.homeStop && <small className="field-error">{authErrors.homeStop}</small>}
+                    </div>
                   </div>
+
+                  {signupRole === 'Rider' && (
+                    <div className="form-group">
+                      <label htmlFor="auth-emergency">Emergency Contact</label>
+                      <input id="auth-emergency" value={signupForm.emergencyContact} onChange={(event) => handleSignupChange('emergencyContact', event.target.value)} placeholder="Family member phone number" />
+                      {authErrors.emergencyContact && <small className="field-error">{authErrors.emergencyContact}</small>}
+                    </div>
+                  )}
+
+                  {signupRole === 'Captain' && (
+                    <div className="captain-doc-fields">
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label htmlFor="auth-vehicle">Vehicle Type</label>
+                          <select id="auth-vehicle" value={signupForm.vehicleType} onChange={(event) => handleSignupChange('vehicleType', event.target.value)}>
+                            <option>Bike</option>
+                            <option>Car</option>
+                          </select>
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor="auth-vehicle-number">Vehicle Number</label>
+                          <input id="auth-vehicle-number" value={signupForm.vehicleNumber} onChange={(event) => handleSignupChange('vehicleNumber', event.target.value)} placeholder="TS09 RR 1234" />
+                          {authErrors.vehicleNumber && <small className="field-error">{authErrors.vehicleNumber}</small>}
+                        </div>
+                      </div>
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label htmlFor="auth-license">Driving License</label>
+                          <input id="auth-license" value={signupForm.licenseNumber} onChange={(event) => handleSignupChange('licenseNumber', event.target.value)} placeholder="Valid license number" />
+                          {authErrors.licenseNumber && <small className="field-error">{authErrors.licenseNumber}</small>}
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor="auth-preference">Ride Preference</label>
+                          <select id="auth-preference" value={signupForm.preferredRider} onChange={(event) => handleSignupChange('preferredRider', event.target.value)}>
+                            <option>Any verified rider</option>
+                            <option>Female rider only</option>
+                            <option>Known route riders</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!isSignup && (
+                <div className="remember-row">
+                  <label>
+                    <input type="checkbox" defaultChecked />
+                    Remember me
+                  </label>
+                  <button type="button" onClick={() => setAuthStatus('Password reset link will be sent from backend API.')}>Forgot password?</button>
                 </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label htmlFor="auth-license">Driving License</label>
-                    <input id="auth-license" value={signupForm.licenseNumber} onChange={(event) => handleSignupChange('licenseNumber', event.target.value)} placeholder="Valid license number" />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="auth-preference">Ride Preference</label>
-                    <select id="auth-preference" value={signupForm.preferredRider} onChange={(event) => handleSignupChange('preferredRider', event.target.value)}>
-                      <option>Any verified rider</option>
-                      <option>Female rider only</option>
-                      <option>Known route riders</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            )}
+              )}
 
-            <div className="remember-row">
-              <label>
-                <input type="checkbox" defaultChecked />
-                Remember me
-              </label>
-              <button type="button" onClick={() => setAuthStatus('Password reset link will be sent from backend API.')}>Forgot password?</button>
-            </div>
+              <button className="search-btn auth-login-btn" type="submit">
+                {isSignup ? `Submit ${signupRole} Signup` : `Login as ${signupRole}`}
+              </button>
 
-            <button className="search-btn auth-login-btn" type="button" onClick={() => handleLoginOpen(signupRole)}>
-              Log In as {signupRole}
-            </button>
+              <button className="auth-create-link" type="button" onClick={() => {
+                setAuthMode(isSignup ? 'login' : 'signup');
+                setAuthErrors({});
+              }}>
+                {isSignup ? 'Already have an account? Login' : "Don't have an account? Sign up"}
+              </button>
 
-            <div className="divider"><span>or</span></div>
-
-            <button className="google-btn" type="button" onClick={handleContinueWithGmail}>Sign in with Google</button>
-
-            <button className="auth-create-link" type="submit">Create {signupRole} Account</button>
-          </form>
-
-          <div className="api-card">
-            <span>Page Flow</span>
-            <h3>{signupRole} Login / Signup</h3>
-            <p>{authStatus}</p>
-            <div className="auth-open-actions">
-              <button onClick={() => handleLoginOpen('Rider')}>Open Rider Page</button>
-              <button onClick={() => handleLoginOpen('Captain')}>Open Captain Page</button>
-            </div>
-            <div className="api-list">
-              <code>{apiPreview.signup}</code>
-              <code>{apiPreview.gmail}</code>
-              <code>{apiPreview.captainRequests}</code>
-            </div>
+              <p className="auth-status-line">{authStatus}</p>
+            </form>
           </div>
-        </div>
-      </section>
-    </div>
-  );
+        </section>
+      </div>
+    );
+  };
 
   if (appPage === 'auth') {
     return renderAuthPage();
