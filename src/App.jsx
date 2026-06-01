@@ -3694,9 +3694,9 @@ export default function App() {
 
                   <div className="rider-request-bar">
                     <div>
-                      <span>Rider hop pickup pins only</span>
-                      <strong>{riderHopPins.join(' | ')}</strong>
-                      <small>Safety mode: Captain sees only assigned pickup pins, not the rider's full journey.</small>
+                      <span>Multi-hop leg pins only</span>
+                      <strong>{captainRequests.map((request) => `${request.pickup} -> ${request.destination}`).join(' | ')}</strong>
+                      <small>Safety mode: Captain sees only assigned hop pickup and hop destination, not the rider's full journey.</small>
                     </div>
                     <div>
                       <span>Captain message / alert</span>
@@ -3714,8 +3714,9 @@ export default function App() {
                       {captainRequests.map((request, index) => (
                         <div className="decision-row" key={`decision-${request.id}`}>
                           <span>{index + 1}. {request.rider}</span>
-                          <strong>Hop pickup pin: {request.pickup}</strong>
-                          <small>{request.status} . Multi-hop rider. Full route hidden for safety.</small>
+                          <strong>Hop pickup: {request.pickup}</strong>
+                          <strong>Hop destination: {request.destination}</strong>
+                          <small>{request.status} . Full rider journey hidden for safety.</small>
                         </div>
                       ))}
                     </div>
@@ -3724,7 +3725,8 @@ export default function App() {
                       {acceptedCaptainRequests.length ? acceptedCaptainRequests.map((request) => (
                         <div className="decision-row accepted" key={`accepted-${request.id}`}>
                           <span>{request.rider}</span>
-                          <strong>{request.pickup} pickup pin . Rs {request.fare}</strong>
+                          <strong>Hop pickup: {request.pickup}</strong>
+                          <strong>Hop destination: {request.destination} . Rs {request.fare}</strong>
                           <small>Pocket target reduced automatically after Captain acceptance/start. Full rider journey hidden.</small>
                         </div>
                       )) : <p>No accepted riders yet.</p>}
@@ -3734,7 +3736,8 @@ export default function App() {
                       {declinedCaptainRequests.length ? declinedCaptainRequests.map((request) => (
                         <div className="decision-row declined" key={`declined-${request.id}`}>
                           <span>{request.rider}</span>
-                          <strong>Hop pickup pin: {request.pickup}</strong>
+                          <strong>Hop pickup: {request.pickup}</strong>
+                          <strong>Hop destination: {request.destination}</strong>
                           <small>RideRelay can move this rider to another Captain.</small>
                         </div>
                       )) : <p>No declined riders yet.</p>}
@@ -3753,7 +3756,7 @@ export default function App() {
                           <div>
                             <span className="route-label">{request.leg}</span>
                             <h5>{request.rider}</h5>
-                            <p>Pickup pin: {request.pickup}. Multi-hop route hidden for rider safety.</p>
+                            <p>Hop pickup: {request.pickup}. Hop destination: {request.destination}. Full rider journey hidden.</p>
                           </div>
                           <div className="fare-box">
                             <span>{request.status}</span>
