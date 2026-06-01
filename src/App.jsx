@@ -1178,6 +1178,8 @@ export default function App() {
   });
   const [captainRequests, setCaptainRequests] = useState(initialCaptainRequests);
   const [captainPanelMessage, setCaptainPanelMessage] = useState('Captain can accept rider requests, confirm pickup presence, start ride, and complete ride.');
+  const [isProfileEditing, setIsProfileEditing] = useState(false);
+  const [profileStatus, setProfileStatus] = useState('Profile details are locked. Click Edit to update.');
   const [riderProfile, setRiderProfile] = useState({
     name: 'Ananya Rao',
     phone: '+91 98765 43210',
@@ -1989,6 +1991,11 @@ export default function App() {
 
   const handleProfileChange = (field, value) => {
     setRiderProfile((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleProfileUpdate = () => {
+    setIsProfileEditing(false);
+    setProfileStatus('Profile updated successfully.');
   };
 
   const handleSignupChange = (field, value) => {
@@ -3103,30 +3110,67 @@ export default function App() {
                     <h3>{riderProfile.name}</h3>
                     <p>Verified rider. 34 shared trips completed.</p>
                   </div>
+                  <button className="btn-mini profile-edit-btn" onClick={() => {
+                    setIsProfileEditing((editing) => !editing);
+                    setProfileStatus(isProfileEditing ? 'Profile edit cancelled.' : 'Edit mode enabled. Details are now mutable.');
+                  }}>
+                    {isProfileEditing ? 'Cancel' : 'Edit'}
+                  </button>
                 </div>
 
                 <div className="panel-card">
-                  <h3>Update Profile</h3>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label htmlFor="rider-name">Full Name</label>
-                      <input id="rider-name" value={riderProfile.name} onChange={(event) => handleProfileChange('name', event.target.value)} />
+                  <div className="profile-panel-heading">
+                    <div>
+                      <h3>{isProfileEditing ? 'Update Profile' : 'Profile Details'}</h3>
+                      <p>{profileStatus}</p>
                     </div>
-                    <div className="form-group">
-                      <label htmlFor="rider-phone">Phone</label>
-                      <input id="rider-phone" value={riderProfile.phone} onChange={(event) => handleProfileChange('phone', event.target.value)} />
-                    </div>
+                    {!isProfileEditing && <span className="locked-pill">Locked</span>}
                   </div>
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label htmlFor="rider-email">Email</label>
-                      <input id="rider-email" value={riderProfile.email} onChange={(event) => handleProfileChange('email', event.target.value)} />
+
+                  {isProfileEditing ? (
+                    <>
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label htmlFor="rider-name">Full Name</label>
+                          <input id="rider-name" value={riderProfile.name} onChange={(event) => handleProfileChange('name', event.target.value)} />
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor="rider-phone">Phone</label>
+                          <input id="rider-phone" value={riderProfile.phone} onChange={(event) => handleProfileChange('phone', event.target.value)} />
+                        </div>
+                      </div>
+                      <div className="form-row">
+                        <div className="form-group">
+                          <label htmlFor="rider-email">Email</label>
+                          <input id="rider-email" value={riderProfile.email} onChange={(event) => handleProfileChange('email', event.target.value)} />
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor="rider-home">Home Stop</label>
+                          <input id="rider-home" value={riderProfile.home} onChange={(event) => handleProfileChange('home', event.target.value)} />
+                        </div>
+                      </div>
+                      <button className="panel-action" onClick={handleProfileUpdate}>Update Profile</button>
+                    </>
+                  ) : (
+                    <div className="profile-readonly-grid">
+                      <div>
+                        <span>Full Name</span>
+                        <strong>{riderProfile.name}</strong>
+                      </div>
+                      <div>
+                        <span>Phone</span>
+                        <strong>{riderProfile.phone}</strong>
+                      </div>
+                      <div>
+                        <span>Email</span>
+                        <strong>{riderProfile.email}</strong>
+                      </div>
+                      <div>
+                        <span>Home Stop</span>
+                        <strong>{riderProfile.home}</strong>
+                      </div>
                     </div>
-                    <div className="form-group">
-                      <label htmlFor="rider-home">Home Stop</label>
-                      <input id="rider-home" value={riderProfile.home} onChange={(event) => handleProfileChange('home', event.target.value)} />
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
             )}
