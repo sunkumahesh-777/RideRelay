@@ -1218,6 +1218,107 @@ button {
   padding: 30px 7% 76px;
 }
 
+.signup-section {
+  padding: 72px 7% 46px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  background: linear-gradient(180deg, rgba(8, 32, 29, 0.78), rgba(5, 14, 18, 0.96));
+}
+
+.section-title.compact {
+  margin-bottom: 30px;
+}
+
+.signup-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.signup-card,
+.api-card {
+  background: rgba(9, 23, 29, 0.86);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  padding: 26px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+}
+
+.mode-switch,
+.auth-actions {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.mode-switch {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.auth-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mode-switch button,
+.auth-actions button,
+.captain-actions button {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 12px;
+  font-weight: 900;
+}
+
+.mode-switch button.active,
+.auth-actions button.active {
+  background: #5eead4;
+  color: #04110e;
+  border-color: #5eead4;
+}
+
+.captain-doc-fields {
+  padding: 18px;
+  margin-bottom: 18px;
+  border-radius: 8px;
+  background: rgba(94, 234, 212, 0.07);
+  border: 1px solid rgba(94, 234, 212, 0.16);
+}
+
+.api-card span,
+.api-card code,
+.signup-record span,
+.captain-profile-card span {
+  display: block;
+  color: #aab6ba;
+}
+
+.api-card h3 {
+  color: #5eead4;
+  margin: 10px 0 12px;
+}
+
+.api-list,
+.signup-records {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.api-list code,
+.signup-record {
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.signup-record strong {
+  display: block;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
 .section-title {
   text-align: center;
   margin-bottom: 48px;
@@ -1321,6 +1422,50 @@ button {
   color: #06130f;
   font-size: 34px;
   font-weight: 900;
+}
+
+.captain-avatar {
+  background: #5eead4;
+}
+
+.captain-panel-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.captain-requests-card {
+  grid-column: 1 / -1;
+}
+
+.captain-request-list {
+  display: grid;
+  gap: 16px;
+}
+
+.captain-request {
+  padding: 20px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.compact-info {
+  margin: 16px 0;
+}
+
+.captain-actions {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.captain-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.captain-actions button:not(:disabled):hover {
+  border-color: rgba(94, 234, 212, 0.5);
+  color: #99f6e4;
 }
 
 .payment-options {
@@ -1664,9 +1809,14 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .signup-shell,
+  .captain-panel-grid {
+    grid-template-columns: 1fr;
+  }
+
   .panel-tabs {
     position: static;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     overflow-x: auto;
   }
 
@@ -1711,6 +1861,10 @@ button {
     align-items: flex-start;
   }
 
+  .captain-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .fare-box {
     text-align: left;
   }
@@ -1723,6 +1877,7 @@ button {
 @media (max-width: 480px) {
   .hero,
   .features,
+  .signup-section,
   .rider-dashboard,
   .navbar,
   .footer {
@@ -1766,5 +1921,11 @@ button {
 
   .ride-card {
     padding: 22px;
+  }
+
+  .auth-actions,
+  .mode-switch,
+  .captain-actions {
+    grid-template-columns: 1fr;
   }
 }

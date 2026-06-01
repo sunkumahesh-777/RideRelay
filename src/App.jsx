@@ -649,6 +649,57 @@ const riderOffers = [
   'No convenience fee on UPI payments today'
 ];
 
+const signupFields = {
+  fullName: '',
+  email: '',
+  phone: '',
+  gender: 'Female',
+  city: 'Hyderabad',
+  homeStop: 'Ameerpet',
+  password: '',
+  emergencyContact: '',
+  vehicleType: 'Bike',
+  vehicleNumber: '',
+  licenseNumber: '',
+  preferredRider: 'Any verified rider'
+};
+
+const initialCaptainRequests = [
+  {
+    id: 'CR-204',
+    rider: 'Ananya Rao',
+    pickup: 'Ameerpet',
+    destination: 'BHEL',
+    leg: 'Leg Step 1',
+    fare: 18,
+    eta: 4,
+    distanceMeters: 320,
+    status: 'pending',
+    presence: 'not-confirmed'
+  },
+  {
+    id: 'CR-205',
+    rider: 'Priya Menon',
+    pickup: 'Lakdikapul',
+    destination: 'KPHB',
+    leg: 'Leg Step 2',
+    fare: 26,
+    eta: 7,
+    distanceMeters: 760,
+    status: 'pending',
+    presence: 'not-confirmed'
+  }
+];
+
+const apiPreview = {
+  signup: 'POST /api/auth/signup',
+  gmail: 'POST /api/auth/google',
+  captainRequests: 'GET /api/captain/requests',
+  captainDecision: 'PATCH /api/captain/requests/:id',
+  presence: 'POST /api/captain/presence',
+  rideStatus: 'PATCH /api/rides/:id/status'
+};
+
 function normalize(value) {
   return value.trim().toLowerCase();
 }
@@ -1107,6 +1158,23 @@ export default function App() {
   const [selectedLocationId, setSelectedLocationId] = useState(1);
   const [locationSearch, setLocationSearch] = useState('');
   const [locationCategory, setLocationCategory] = useState('All');
+  const [signupRole, setSignupRole] = useState('Rider');
+  const [signupMethod, setSignupMethod] = useState('Email');
+  const [signupForm, setSignupForm] = useState(signupFields);
+  const [signupRecords, setSignupRecords] = useState([]);
+  const [authStatus, setAuthStatus] = useState('Create a Rider or Captain account. Backend API payload is prepared after submit.');
+  const [captainProfile, setCaptainProfile] = useState({
+    name: 'Rahul Captain',
+    phone: '+91 90000 12345',
+    email: 'rahul.captain@riderelay.in',
+    vehicleType: 'Bike',
+    vehicleNumber: 'TS09 RR 2045',
+    licenseNumber: 'DL-TS-2026-2045',
+    verification: 'Verified',
+    gender: 'Male'
+  });
+  const [captainRequests, setCaptainRequests] = useState(initialCaptainRequests);
+  const [captainPanelMessage, setCaptainPanelMessage] = useState('Captain can accept rider requests, confirm pickup presence, start ride, and complete ride.');
   const [riderProfile, setRiderProfile] = useState({
     name: 'Ananya Rao',
     phone: '+91 98765 43210',
@@ -1920,6 +1988,127 @@ export default function App() {
     setRiderProfile((current) => ({ ...current, [field]: value }));
   };
 
+  const handleSignupChange = (field, value) => {
+    setSignupForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleContinueWithGmail = () => {
+    setSignupMethod('Gmail');
+    setSignupForm((current) => ({
+      ...current,
+      email: current.email || (signupRole === 'Captain' ? 'captain@gmail.com' : 'rider@gmail.com')
+    }));
+    setAuthStatus(`Gmail selected for ${signupRole}. In backend this will call ${apiPreview.gmail}.`);
+  };
+
+  const handleSignupSubmit = (event) => {
+    event.preventDefault();
+
+    const requiredValues = [
+      signupForm.fullName,
+      signupForm.email,
+      signupForm.phone,
+      signupForm.city,
+      signupForm.homeStop,
+      signupMethod === 'Email' ? signupForm.password : 'gmail-auth'
+    ];
+
+    if (signupRole === 'Captain') {
+      requiredValues.push(signupForm.vehicleNumber, signupForm.licenseNumber);
+    }
+
+    if (requiredValues.some((value) => !String(value).trim())) {
+      setAuthStatus(`Please complete all valid ${signupRole} details before continuing.`);
+      return;
+    }
+
+    const record = {
+      id: `${signupRole.toUpperCase()}-${Date.now()}`,
+      role: signupRole,
+      method: signupMethod,
+      name: signupForm.fullName,
+      email: signupForm.email,
+      phone: signupForm.phone,
+      gender: signupForm.gender,
+      city: signupForm.city,
+      homeStop: signupForm.homeStop,
+      verification: signupRole === 'Captain' ? 'KYC pending' : 'Phone verified',
+      api: apiPreview.signup,
+      createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+
+    setSignupRecords((records) => [record, ...records].slice(0, 4));
+
+    if (signupRole === 'Rider') {
+      setRiderProfile((current) => ({
+        ...current,
+        name: signupForm.fullName,
+        phone: signupForm.phone,
+        email: signupForm.email,
+        home: signupForm.homeStop,
+        emergency: signupForm.emergencyContact || current.emergency
+      }));
+    } else {
+      setCaptainProfile({
+        name: signupForm.fullName,
+        phone: signupForm.phone,
+        email: signupForm.email,
+        vehicleType: signupForm.vehicleType,
+        vehicleNumber: signupForm.vehicleNumber,
+        licenseNumber: signupForm.licenseNumber,
+        verification: 'KYC pending',
+        gender: signupForm.gender
+      });
+    }
+
+    setAuthStatus(`${signupRole} signup created locally. Ready to send payload to ${apiPreview.signup}.`);
+  };
+
+  const updateCaptainRequest = (requestId, updates, message) => {
+    setCaptainRequests((requests) => requests.map((request) => (
+      request.id === requestId ? { ...request, ...updates } : request
+    )));
+    setCaptainPanelMessage(message);
+  };
+
+  const handleCaptainAccept = (requestId) => {
+    const request = captainRequests.find((item) => item.id === requestId);
+    updateCaptainRequest(
+      requestId,
+      { status: 'accepted', presence: 'not-confirmed' },
+      `${captainProfile.name} accepted ${request?.rider ?? 'rider'} request. Rider can verify Captain at pickup.`
+    );
+  };
+
+  const handleCaptainDecline = (requestId) => {
+    const request = captainRequests.find((item) => item.id === requestId);
+    updateCaptainRequest(
+      requestId,
+      { status: 'declined', presence: 'not-confirmed' },
+      `${captainProfile.name} declined ${request?.rider ?? 'rider'} request. RideRelay will move request to another Captain.`
+    );
+  };
+
+  const handleCaptainPresence = (requestId, isPresent) => {
+    const request = captainRequests.find((item) => item.id === requestId);
+    updateCaptainRequest(
+      requestId,
+      { presence: isPresent ? 'present' : 'absent', status: isPresent ? 'present-at-pickup' : 'location-alert' },
+      isPresent
+        ? `GPS confirms Captain is present within ${request?.distanceMeters ?? 500}m at ${request?.pickup}.`
+        : `Captain not present at ${request?.pickup}. Alert sent to Rider and Captain.`
+    );
+  };
+
+  const handleCaptainRideStatus = (requestId, status) => {
+    const label = status === 'ride-started' ? 'Ride started by Captain.' : 'Ride completed. Rider can pay and review.';
+    updateCaptainRequest(requestId, { status }, label);
+  };
+
+  const scrollToSignup = () => {
+    document.getElementById('signup-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   const handlePaymentMethod = (method) => {
     setPaymentMethod(method);
     setPaymentStatus(bookedRide ? `Rs ${bookedRide.fare} ready to pay by ${method}.` : `${method} selected for your ride.`);
@@ -2057,7 +2246,7 @@ export default function App() {
             <strong>{currentTime}</strong>
           </div>
           <button className="btn btn-outline" onClick={() => setActivePanel('profile')}>Profile</button>
-          <button className="btn btn-primary">Get Started</button>
+          <button className="btn btn-primary" onClick={scrollToSignup}>Signup</button>
         </div>
       </nav>
 
@@ -2540,6 +2729,135 @@ export default function App() {
         </section>
       </main>
 
+      <section className="signup-section" id="signup-panel">
+        <div className="section-title compact">
+          <h2>
+            Create <span>RideRelay Account</span>
+          </h2>
+          <p>One signup page for Rider and Captain. The form is API-ready for email or Gmail login.</p>
+        </div>
+
+        <div className="signup-shell">
+          <form className="signup-card" onSubmit={handleSignupSubmit}>
+            <div className="mode-switch" aria-label="Choose account role">
+              {['Rider', 'Captain'].map((role) => (
+                <button
+                  className={signupRole === role ? 'active' : ''}
+                  key={role}
+                  onClick={() => setSignupRole(role)}
+                  type="button"
+                >
+                  {role}
+                </button>
+              ))}
+            </div>
+
+            <div className="auth-actions">
+              <button className={signupMethod === 'Email' ? 'active' : ''} onClick={() => setSignupMethod('Email')} type="button">Email Signup</button>
+              <button className={signupMethod === 'Gmail' ? 'active' : ''} onClick={handleContinueWithGmail} type="button">Continue with Gmail</button>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="signup-name">Full Name</label>
+                <input id="signup-name" value={signupForm.fullName} onChange={(event) => handleSignupChange('fullName', event.target.value)} placeholder="Enter valid full name" />
+              </div>
+              <div className="form-group">
+                <label htmlFor="signup-phone">Phone Number</label>
+                <input id="signup-phone" value={signupForm.phone} onChange={(event) => handleSignupChange('phone', event.target.value)} placeholder="+91 mobile number" />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="signup-email">Email / Gmail</label>
+                <input id="signup-email" type="email" value={signupForm.email} onChange={(event) => handleSignupChange('email', event.target.value)} placeholder="name@example.com" />
+              </div>
+              <div className="form-group">
+                <label htmlFor="signup-password">Password</label>
+                <input id="signup-password" type="password" value={signupForm.password} onChange={(event) => handleSignupChange('password', event.target.value)} placeholder={signupMethod === 'Gmail' ? 'Handled by Gmail login' : 'Create password'} disabled={signupMethod === 'Gmail'} />
+              </div>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label htmlFor="signup-gender">Gender</label>
+                <select id="signup-gender" value={signupForm.gender} onChange={(event) => handleSignupChange('gender', event.target.value)}>
+                  <option>Female</option>
+                  <option>Male</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label htmlFor="signup-home">Home / Primary Stop</label>
+                <input id="signup-home" list="stops" value={signupForm.homeStop} onChange={(event) => handleSignupChange('homeStop', event.target.value)} placeholder="Ameerpet, KPHB, Charminar..." />
+              </div>
+            </div>
+
+            {signupRole === 'Rider' && (
+              <div className="form-group">
+                <label htmlFor="signup-emergency">Emergency Contact</label>
+                <input id="signup-emergency" value={signupForm.emergencyContact} onChange={(event) => handleSignupChange('emergencyContact', event.target.value)} placeholder="Family member phone number" />
+              </div>
+            )}
+
+            {signupRole === 'Captain' && (
+              <div className="captain-doc-fields">
+                <div className="form-row">
+                  <div className="form-group">
+                    <label htmlFor="captain-vehicle">Vehicle Type</label>
+                    <select id="captain-vehicle" value={signupForm.vehicleType} onChange={(event) => handleSignupChange('vehicleType', event.target.value)}>
+                      <option>Bike</option>
+                      <option>Car</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="captain-number">Vehicle Number</label>
+                    <input id="captain-number" value={signupForm.vehicleNumber} onChange={(event) => handleSignupChange('vehicleNumber', event.target.value)} placeholder="TS09 RR 1234" />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label htmlFor="captain-license">Driving License</label>
+                    <input id="captain-license" value={signupForm.licenseNumber} onChange={(event) => handleSignupChange('licenseNumber', event.target.value)} placeholder="Valid license number" />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="captain-preference">Ride Preference</label>
+                    <select id="captain-preference" value={signupForm.preferredRider} onChange={(event) => handleSignupChange('preferredRider', event.target.value)}>
+                      <option>Any verified rider</option>
+                      <option>Female rider only</option>
+                      <option>Known route riders</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button className="search-btn" type="submit">Create {signupRole} Account</button>
+          </form>
+
+          <div className="api-card">
+            <span>Dynamic API Flow</span>
+            <h3>{apiPreview.signup}</h3>
+            <p>{authStatus}</p>
+            <div className="api-list">
+              <code>{apiPreview.gmail}</code>
+              <code>{apiPreview.captainRequests}</code>
+              <code>{apiPreview.presence}</code>
+            </div>
+            <div className="signup-records">
+              {signupRecords.map((record) => (
+                <div className="signup-record" key={record.id}>
+                  <strong>{record.name}</strong>
+                  <span>{record.role} . {record.method} . {record.verification}</span>
+                </div>
+              ))}
+              {!signupRecords.length && <p>No signup submitted yet.</p>}
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section className="rider-dashboard" id="rider-panel">
         <div className="section-title">
           <h2>
@@ -2556,6 +2874,7 @@ export default function App() {
               ['trips', 'Trips'],
               ['safety', 'Safety'],
               ['locations', 'Locations'],
+              ['captain', 'Captain Panel'],
               ['offers', 'Offers']
             ].map(([key, label]) => (
               <button
@@ -2722,6 +3041,82 @@ export default function App() {
                   <span>Destination: {destination}</span>
                   <span>Home stop: {riderProfile.home}</span>
                   <button className="panel-action" onClick={() => setPickup(riderProfile.home)}>Use Home As Pickup</button>
+                </div>
+              </div>
+            )}
+
+            {activePanel === 'captain' && (
+              <div className="panel-grid captain-panel-grid">
+                <div className="panel-card profile-card captain-profile-card">
+                  <div className="avatar captain-avatar">{captainProfile.name.slice(0, 1)}</div>
+                  <div>
+                    <h3>{captainProfile.name}</h3>
+                    <p>{captainProfile.verification} Captain . {captainProfile.vehicleType} . {captainProfile.vehicleNumber}</p>
+                    <span>{captainProfile.email}</span>
+                  </div>
+                </div>
+
+                <div className="panel-card safety-list">
+                  <h3>Captain API Status</h3>
+                  <p>{captainPanelMessage}</p>
+                  <span>{apiPreview.captainRequests}</span>
+                  <span>{apiPreview.captainDecision}</span>
+                  <span>{apiPreview.rideStatus}</span>
+                </div>
+
+                <div className="panel-card captain-requests-card">
+                  <h3>Rider Requests</h3>
+                  <div className="captain-request-list">
+                    {captainRequests.map((request) => (
+                      <div className="captain-request" key={request.id}>
+                        <div className="match-header">
+                          <div>
+                            <span className="route-label">{request.leg}</span>
+                            <h5>{request.rider}</h5>
+                            <p>{request.pickup} {'->'} {request.destination}</p>
+                          </div>
+                          <div className="fare-box">
+                            <span>{request.status}</span>
+                            <strong>Rs {request.fare}</strong>
+                          </div>
+                        </div>
+
+                        <div className="ride-info compact-info">
+                          <div>
+                            <span>ETA</span>
+                            <strong>{request.eta} min</strong>
+                          </div>
+                          <div>
+                            <span>GPS</span>
+                            <strong>{request.distanceMeters}m</strong>
+                          </div>
+                          <div>
+                            <span>Presence</span>
+                            <strong>{request.presence.replace('-', ' ')}</strong>
+                          </div>
+                        </div>
+
+                        <div className="captain-actions">
+                          <button onClick={() => handleCaptainAccept(request.id)} disabled={request.status !== 'pending'}>Accept Request</button>
+                          <button onClick={() => handleCaptainDecline(request.id)} disabled={request.status !== 'pending'}>Decline</button>
+                          <button onClick={() => handleCaptainPresence(request.id, true)} disabled={!['accepted', 'location-alert'].includes(request.status)}>Captain Present</button>
+                          <button onClick={() => handleCaptainPresence(request.id, false)} disabled={!['accepted', 'present-at-pickup'].includes(request.status)}>Not At Pickup</button>
+                          <button onClick={() => handleCaptainRideStatus(request.id, 'ride-started')} disabled={request.status !== 'present-at-pickup'}>Start Ride</button>
+                          <button onClick={() => handleCaptainRideStatus(request.id, 'ride-completed')} disabled={request.status !== 'ride-started'}>End Ride</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="panel-card safety-list">
+                  <h3>Captain Process</h3>
+                  <p>This panel matches the real backend flow we discussed.</p>
+                  <span>1. Rider sends request</span>
+                  <span>2. Captain accepts or declines</span>
+                  <span>3. Rider verifies Captain at pickup using GPS within 500m</span>
+                  <span>4. Captain starts ride only after pickup</span>
+                  <span>5. Captain ends ride, then rider pays and reviews</span>
                 </div>
               </div>
             )}
