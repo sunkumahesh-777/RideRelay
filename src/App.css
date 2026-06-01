@@ -1909,7 +1909,7 @@ button {
 
 .accepted-money-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -1939,6 +1939,15 @@ button {
 .accepted-money-summary strong {
   color: #fde68a;
   font-size: 22px;
+}
+
+.accepted-money-summary .target-complete {
+  border-color: rgba(94, 234, 212, 0.42);
+  background: rgba(94, 234, 212, 0.12);
+}
+
+.accepted-money-summary .target-complete strong {
+  color: #5eead4;
 }
 
 .rider-request-bar {

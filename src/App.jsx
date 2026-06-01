@@ -2683,8 +2683,13 @@ export default function App() {
   const captainDeclinedCount = captainVisibleRequests.filter((request) => request.status === 'declined').length;
   const acceptedCaptainRequests = captainVisibleRequests.filter((request) => ['accepted', 'present-at-pickup', 'ride-started', 'ride-completed'].includes(request.status));
   const declinedCaptainRequests = captainVisibleRequests.filter((request) => request.status === 'declined');
+  const completedCaptainRequests = captainVisibleRequests.filter((request) => request.status === 'ride-completed');
+  const captainWholeRideCompleted = captainVisibleRequests.length > 0
+    && captainVisibleRequests.every((request) => request.status === 'ride-completed');
   const acceptedRiderTotalAmount = acceptedCaptainRequests.reduce((total, request) => total + request.fare, 0);
-  const pocketReducedAmount = acceptedRiderTotalAmount;
+  const pocketReducedAmount = captainWholeRideCompleted
+    ? captainRoute.targetMoney
+    : Math.min(captainRoute.targetMoney, acceptedRiderTotalAmount);
   const remainingTargetMoney = Math.max(0, captainRoute.targetMoney - pocketReducedAmount);
   const riderHopPins = [...new Set(captainVisibleRequests.map((request) => `${request.pickup} -> ${request.destination}`))];
 
@@ -3693,12 +3698,16 @@ export default function App() {
                       <strong>{acceptedCaptainRequests.length} rider{acceptedCaptainRequests.length === 1 ? '' : 's'}</strong>
                     </div>
                     <div>
-                      <span>Pocket reduced</span>
+                      <span>Target covered</span>
                       <strong>Rs {pocketReducedAmount}</strong>
                     </div>
                     <div>
                       <span>Remaining target</span>
                       <strong>Rs {remainingTargetMoney}</strong>
+                    </div>
+                    <div className={captainWholeRideCompleted ? 'target-complete' : ''}>
+                      <span>Whole ride status</span>
+                      <strong>{captainWholeRideCompleted ? 'Target covered' : `${completedCaptainRequests.length}/${captainVisibleRequests.length} completed`}</strong>
                     </div>
                   </div>
 
@@ -3756,7 +3765,7 @@ export default function App() {
                           <span>{request.rider}</span>
                           <strong>Hop pickup: {request.pickup}</strong>
                           <strong>Hop destination: {request.destination} . Rs {request.fare}</strong>
-                          <small>Pocket target reduced automatically after Captain acceptance/start. Full rider journey hidden.</small>
+                          <small>{request.status === 'ride-completed' ? 'Ride completed. This hop counts toward Captain target coverage.' : 'Target is fully covered after the whole Captain ride is completed.'} Full rider journey hidden.</small>
                         </div>
                       )) : <p>No accepted riders yet.</p>}
                     </div>
