@@ -1255,12 +1255,22 @@ button {
 
 .auth-brand-only {
   justify-content: center;
-  padding-top: 28px;
-  padding-bottom: 28px;
+  padding-top: 24px;
+  padding-bottom: 24px;
 }
 
 .auth-brand-only .brand-lockup {
   justify-content: center;
+  gap: 18px;
+}
+
+.auth-brand-only .brand-logo {
+  width: 86px;
+  height: 64px;
+}
+
+.auth-brand-only .brand-title-image {
+  width: min(340px, 60vw);
 }
 
 .auth-screen .section-title {
@@ -1342,15 +1352,24 @@ button {
 }
 
 .auth-screen .signup-card {
-  padding-top: 34px;
+  padding: 34px 28px;
 }
 
 .auth-entry-card {
   margin: 0 auto;
+  max-width: 560px;
 }
 
 .auth-card-title h2 {
   color: #ffffff;
+  font-size: clamp(34px, 4vw, 48px);
+}
+
+.role-select-card {
+  padding: 14px;
+  border: 1px solid rgba(94, 234, 212, 0.18);
+  border-radius: 8px;
+  background: rgba(94, 234, 212, 0.06);
 }
 
 .auth-status-line {
