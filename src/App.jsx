@@ -2262,10 +2262,11 @@ export default function App() {
 
       <section className="signup-section auth-screen" id="signup-panel">
         <div className="section-title compact">
+          <span className="auth-orbit">RR</span>
           <h2>
-            Login or Signup <span>RideRelay</span>
+            Welcome back!
           </h2>
-          <p>Separate entry page for Rider and Captain. After login/signup, RideRelay opens the correct page.</p>
+          <p>Sign in as Rider or Captain to continue your shared journey.</p>
         </div>
 
         <div className="signup-shell">
@@ -2359,7 +2360,23 @@ export default function App() {
               </div>
             )}
 
-            <button className="search-btn" type="submit">Create {signupRole} Account & Open {signupRole} Page</button>
+            <div className="remember-row">
+              <label>
+                <input type="checkbox" defaultChecked />
+                Remember me
+              </label>
+              <button type="button" onClick={() => setAuthStatus('Password reset link will be sent from backend API.')}>Forgot password?</button>
+            </div>
+
+            <button className="search-btn auth-login-btn" type="button" onClick={() => handleLoginOpen(signupRole)}>
+              Log In as {signupRole}
+            </button>
+
+            <div className="divider"><span>or</span></div>
+
+            <button className="google-btn" type="button" onClick={handleContinueWithGmail}>Sign in with Google</button>
+
+            <button className="auth-create-link" type="submit">Create {signupRole} Account</button>
           </form>
 
           <div className="api-card">
