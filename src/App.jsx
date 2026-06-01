@@ -2261,18 +2261,18 @@ export default function App() {
       </nav>
 
       <section className="signup-section auth-screen" id="signup-panel">
-        <div className="section-title compact">
-          <span className="auth-orbit">
-            <img src={assetPath('riderelay-logo.png')} alt="RideRelay logo mark" />
-          </span>
-          <h2>
-            Welcome back!
-          </h2>
-          <p>Sign in as Rider or Captain to continue your shared journey.</p>
-        </div>
-
         <div className="signup-shell">
           <form className="signup-card" onSubmit={handleSignupSubmit}>
+            <div className="section-title compact auth-card-title">
+              <span className="auth-orbit">
+                <img src={assetPath('riderelay-logo.png')} alt="RideRelay logo mark" />
+              </span>
+              <h2>
+                Welcome back!
+              </h2>
+              <p>Sign in as Rider or Captain to continue your shared journey.</p>
+            </div>
+
             <div className="mode-switch" aria-label="Choose account role">
               {['Rider', 'Captain'].map((role) => (
                 <button className={signupRole === role ? 'active' : ''} key={role} onClick={() => setSignupRole(role)} type="button">
