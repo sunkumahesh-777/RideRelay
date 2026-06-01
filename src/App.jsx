@@ -1177,16 +1177,24 @@ export default function App() {
     gender: 'Male',
     upiId: 'rahul@upi',
     bankName: 'RideRelay Partner Bank',
-    accountLast4: '2045'
+    accountNumber: 'XXXXXX2045',
+    ifsc: 'RRLY0002045',
+    accountHolder: 'Rahul Captain',
+    accountLast4: '2045',
+    qrFileName: 'No QR uploaded'
   });
   const [captainRequests, setCaptainRequests] = useState(initialCaptainRequests);
   const [captainPanelMessage, setCaptainPanelMessage] = useState('Captain can accept rider requests, confirm pickup presence, start ride, and complete ride.');
   const [captainRoute, setCaptainRoute] = useState({
     source: 'Ameerpet',
     destination: 'BHEL',
+    vacantSeats: 2,
+    targetMoney: 180,
     status: 'Route not submitted'
   });
   const [captainChatMessage, setCaptainChatMessage] = useState('I received your request. Please wait near the pickup pin.');
+  const [captainPaymentStatus, setCaptainPaymentStatus] = useState('Payment receiving details are editable.');
+  const [riderChatDrafts, setRiderChatDrafts] = useState({});
   const [isProfileEditing, setIsProfileEditing] = useState(false);
   const [profileStatus, setProfileStatus] = useState('Profile details are locked. Click Edit to update.');
   const [riderProfile, setRiderProfile] = useState({
@@ -2034,9 +2042,51 @@ export default function App() {
   const handleCaptainRouteChange = (field, value) => {
     setCaptainRoute((current) => ({
       ...current,
-      [field]: value,
+      [field]: field === 'vacantSeats' || field === 'targetMoney' ? Number(value) : value,
       status: 'Draft route. Submit to make this route visible for rider suggestions.'
     }));
+  };
+
+  const handleCaptainPaymentChange = (field, value) => {
+    setCaptainProfile((current) => {
+      const nextProfile = {
+        ...current,
+        [field]: value
+      };
+
+      if (field === 'accountNumber') {
+        const visibleDigits = value.replace(/\D/g, '').slice(-4);
+        nextProfile.accountLast4 = visibleDigits || current.accountLast4;
+      }
+
+      return nextProfile;
+    });
+    setCaptainPaymentStatus('Unsaved payment changes. Submit to save.');
+  };
+
+  const handleCaptainQrUpload = (event) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setCaptainProfile((current) => ({
+      ...current,
+      qrFileName: file.name
+    }));
+    setCaptainPaymentStatus(`${file.name} selected. Submit to save QR for rider payments.`);
+  };
+
+  const handleCaptainPaymentSubmit = (event) => {
+    event.preventDefault();
+
+    if (!captainProfile.upiId.trim() && (!captainProfile.accountNumber.trim() || !captainProfile.ifsc.trim())) {
+      setCaptainPaymentStatus('Add UPI ID or complete bank account details before saving.');
+      return;
+    }
+
+    setCaptainPaymentStatus('Payment receiving details saved. Riders can pay after ride completion.');
   };
 
   const handleCaptainRouteSubmit = (event) => {
@@ -2060,9 +2110,11 @@ export default function App() {
       ...current,
       source: routeSource,
       destination: routeDestination,
-      status: `Active route submitted. ${routeDistance.toFixed(1)} km path is ready for rider suggestions.`
+      vacantSeats: Math.max(1, current.vacantSeats || 1),
+      targetMoney: Math.max(0, current.targetMoney || 0),
+      status: `Active route submitted. ${routeDistance.toFixed(1)} km path, ${Math.max(1, captainRoute.vacantSeats || 1)} vacant seat${Number(captainRoute.vacantSeats) === 1 ? '' : 's'}, Rs ${Math.max(0, captainRoute.targetMoney || 0)} target.`
     }));
-    setCaptainPanelMessage(`Captain route ${routeSource} to ${routeDestination} is active. RideRelay can suggest it to riders whose pickup or destination aligns with this path.`);
+    setCaptainPanelMessage(`Captain route ${routeSource} to ${routeDestination} is active with ${Math.max(1, captainRoute.vacantSeats || 1)} vacant seat${Number(captainRoute.vacantSeats) === 1 ? '' : 's'} and Rs ${Math.max(0, captainRoute.targetMoney || 0)} target money. RideRelay can suggest it to suitable riders.`);
   };
 
   const handleSignupChange = (field, value) => {
@@ -2180,7 +2232,11 @@ export default function App() {
         gender: signupForm.gender,
         upiId: `${normalize(signupForm.fullName).replace(/\s+/g, '') || 'captain'}@upi`,
         bankName: 'Add bank account',
-        accountLast4: signupForm.vehicleNumber.slice(-4) || '0000'
+        accountNumber: '',
+        ifsc: '',
+        accountHolder: signupForm.fullName,
+        accountLast4: signupForm.vehicleNumber.slice(-4) || '0000',
+        qrFileName: 'No QR uploaded'
       });
     }
 
@@ -2213,14 +2269,15 @@ export default function App() {
   const handleCaptainSendAlert = (requestId) => {
     const request = captainRequests.find((item) => item.id === requestId);
     const sentAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const message = riderChatDrafts[requestId] || captainChatMessage;
 
     updateCaptainRequest(
       requestId,
       {
-        captainMessage: captainChatMessage,
+        captainMessage: message,
         alertSentAt: sentAt
       },
-      `Alert sent to ${request?.rider ?? 'rider'}: ${captainChatMessage}`
+      `Alert sent to ${request?.rider ?? 'rider'}: ${message}`
     );
   };
 
@@ -2539,6 +2596,9 @@ export default function App() {
   const sameDestinationCount = captainRequests.filter((request) => normalize(request.destination) === normalize(captainRouteDestination)).length;
   const captainPendingCount = captainRequests.filter((request) => request.status === 'pending').length;
   const captainAcceptedCount = captainRequests.filter((request) => request.status === 'accepted' || request.status === 'present-at-pickup' || request.status === 'ride-started').length;
+  const captainDeclinedCount = captainRequests.filter((request) => request.status === 'declined').length;
+  const acceptedCaptainRequests = captainRequests.filter((request) => ['accepted', 'present-at-pickup', 'ride-started', 'ride-completed'].includes(request.status));
+  const declinedCaptainRequests = captainRequests.filter((request) => request.status === 'declined');
   const riderHopPins = [...new Set(captainRequests.flatMap((request) => [request.pickup, request.destination]))];
 
   return (
@@ -3416,6 +3476,73 @@ export default function App() {
                   </div>
                 </div>
 
+                <form className="panel-card captain-payment-section" onSubmit={handleCaptainPaymentSubmit}>
+                  <div className="route-card-heading">
+                    <div>
+                      <h3>Captain Payment Details</h3>
+                      <p>Add bank account, UPI ID, or upload QR code. Riders will use this after ride completion.</p>
+                    </div>
+                    <div className="qr-box large-qr">
+                      <span>QR</span>
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="captain-account-holder">Account Holder Name</label>
+                      <input
+                        id="captain-account-holder"
+                        value={captainProfile.accountHolder}
+                        onChange={(event) => handleCaptainPaymentChange('accountHolder', event.target.value)}
+                        placeholder="Name as per bank"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="captain-account-number">Account Number</label>
+                      <input
+                        id="captain-account-number"
+                        value={captainProfile.accountNumber}
+                        onChange={(event) => handleCaptainPaymentChange('accountNumber', event.target.value)}
+                        placeholder="Enter account number"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="captain-ifsc">IFSC Code</label>
+                      <input
+                        id="captain-ifsc"
+                        value={captainProfile.ifsc}
+                        onChange={(event) => handleCaptainPaymentChange('ifsc', event.target.value.toUpperCase())}
+                        placeholder="IFSC code"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="captain-upi">UPI ID</label>
+                      <input
+                        id="captain-upi"
+                        value={captainProfile.upiId}
+                        onChange={(event) => handleCaptainPaymentChange('upiId', event.target.value)}
+                        placeholder="name@upi"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="captain-qr">Upload QR Code</label>
+                    <input id="captain-qr" type="file" accept=".png,.jpg,.jpeg,.pdf" onChange={handleCaptainQrUpload} />
+                    <small className="input-help">Selected file: {captainProfile.qrFileName}</small>
+                  </div>
+
+                  <div className="captain-message-bar">
+                    <span>Payment status</span>
+                    <strong>{captainPaymentStatus}</strong>
+                  </div>
+
+                  <button className="panel-action" type="submit">Submit Payment Details</button>
+                </form>
+
                 <form className="panel-card captain-route-card" onSubmit={handleCaptainRouteSubmit}>
                   <div className="route-card-heading">
                     <div>
@@ -3448,6 +3575,31 @@ export default function App() {
                     </div>
                   </div>
 
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="captain-vacant">Vacant Count</label>
+                      <input
+                        id="captain-vacant"
+                        type="number"
+                        min="1"
+                        value={captainRoute.vacantSeats}
+                        onChange={(event) => handleCaptainRouteChange('vacantSeats', event.target.value)}
+                        placeholder="Available seats"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="captain-target">Pocket / Target Money</label>
+                      <input
+                        id="captain-target"
+                        type="number"
+                        min="0"
+                        value={captainRoute.targetMoney}
+                        onChange={(event) => handleCaptainRouteChange('targetMoney', event.target.value)}
+                        placeholder="Expected amount"
+                      />
+                    </div>
+                  </div>
+
                   <datalist id="captain-stops">
                     {availableStops.map((stop) => (
                       <option value={stop} key={`captain-${stop}`} />
@@ -3462,6 +3614,14 @@ export default function App() {
                     <div>
                       <span>Same destination riders</span>
                       <strong>{sameDestinationCount} rider{sameDestinationCount === 1 ? '' : 's'} to {captainRouteDestination}</strong>
+                    </div>
+                    <div>
+                      <span>Vacant count</span>
+                      <strong>{captainRoute.vacantSeats} seat{Number(captainRoute.vacantSeats) === 1 ? '' : 's'} available</strong>
+                    </div>
+                    <div>
+                      <span>Pocket target</span>
+                      <strong>Rs {captainRoute.targetMoney}</strong>
                     </div>
                     <div>
                       <span>Rider route fit</span>
@@ -3510,9 +3670,10 @@ export default function App() {
                       <p>Captain can accept, alert rider, confirm pickup presence, and start ride.</p>
                     </div>
                     <div className="request-count-bar">
-                      <span>{captainRequests.length} total</span>
-                      <span>{captainPendingCount} pending</span>
+                      <span>{captainPendingCount} rider request{captainPendingCount === 1 ? '' : 's'} open</span>
                       <span>{captainAcceptedCount} active</span>
+                      <span>{captainDeclinedCount} declined</span>
+                      <span>{captainRoute.vacantSeats} vacant</span>
                     </div>
                   </div>
 
@@ -3528,6 +3689,39 @@ export default function App() {
                         onChange={(event) => setCaptainChatMessage(event.target.value)}
                         placeholder="Message to rider after request"
                       />
+                    </div>
+                  </div>
+
+                  <div className="captain-decision-grid">
+                    <div className="captain-decision-box">
+                      <h4>Details Of Riders</h4>
+                      {captainRequests.map((request, index) => (
+                        <div className="decision-row" key={`decision-${request.id}`}>
+                          <span>{index + 1}. {request.rider}</span>
+                          <strong>{request.pickup} {'->'} {request.destination}</strong>
+                          <small>{request.status}</small>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="captain-decision-box">
+                      <h4>Accepted Riders</h4>
+                      {acceptedCaptainRequests.length ? acceptedCaptainRequests.map((request) => (
+                        <div className="decision-row accepted" key={`accepted-${request.id}`}>
+                          <span>{request.rider}</span>
+                          <strong>{request.pickup} pickup . Rs {request.fare}</strong>
+                          <small>{request.captainMessage ?? 'Waiting for Captain alert.'}</small>
+                        </div>
+                      )) : <p>No accepted riders yet.</p>}
+                    </div>
+                    <div className="captain-decision-box">
+                      <h4>Declined Riders</h4>
+                      {declinedCaptainRequests.length ? declinedCaptainRequests.map((request) => (
+                        <div className="decision-row declined" key={`declined-${request.id}`}>
+                          <span>{request.rider}</span>
+                          <strong>{request.pickup} {'->'} {request.destination}</strong>
+                          <small>RideRelay can move this rider to another Captain.</small>
+                        </div>
+                      )) : <p>No declined riders yet.</p>}
                     </div>
                   </div>
 
@@ -3565,6 +3759,19 @@ export default function App() {
                           <span>Rider alert bar</span>
                           <strong>{request.captainMessage ?? 'No Captain alert sent yet.'}</strong>
                           {request.alertSentAt && <small>Sent at {request.alertSentAt}</small>}
+                        </div>
+
+                        <div className="individual-chat-box">
+                          <label htmlFor={`chat-${request.id}`}>Individual chat to {request.rider}</label>
+                          <div>
+                            <input
+                              id={`chat-${request.id}`}
+                              value={riderChatDrafts[request.id] ?? ''}
+                              onChange={(event) => setRiderChatDrafts((current) => ({ ...current, [request.id]: event.target.value }))}
+                              placeholder={`Message only to ${request.rider}`}
+                            />
+                            <button onClick={() => handleCaptainSendAlert(request.id)}>Submit Chat</button>
+                          </div>
                         </div>
 
                         <div className="captain-actions">

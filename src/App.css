@@ -1761,6 +1761,17 @@ button {
   gap: 18px;
 }
 
+.captain-payment-section {
+  display: grid;
+  gap: 18px;
+}
+
+.large-qr {
+  width: 84px;
+  height: 84px;
+  flex: 0 0 84px;
+}
+
 .route-card-heading {
   display: flex;
   justify-content: space-between;
@@ -1902,6 +1913,59 @@ button {
   padding: 13px;
 }
 
+.captain-decision-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.captain-decision-box {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  padding: 16px;
+}
+
+.captain-decision-box h4 {
+  color: #5eead4;
+  font-size: 18px;
+  margin-bottom: 12px;
+}
+
+.captain-decision-box p {
+  color: #aab6ba;
+  font-size: 14px;
+}
+
+.decision-row {
+  display: grid;
+  gap: 4px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.decision-row:first-of-type {
+  border-top: 0;
+}
+
+.decision-row span,
+.decision-row small {
+  color: #aab6ba;
+}
+
+.decision-row strong {
+  color: #ffffff;
+}
+
+.decision-row.accepted strong {
+  color: #99f6e4;
+}
+
+.decision-row.declined strong {
+  color: #fca5a5;
+}
+
 .captain-request-list {
   display: grid;
   gap: 16px;
@@ -1930,6 +1994,40 @@ button {
   display: block;
   color: #fde68a;
   margin-top: 7px;
+}
+
+.individual-chat-box {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.individual-chat-box label {
+  color: #aab6ba;
+  font-size: 13px;
+}
+
+.individual-chat-box div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 150px;
+  gap: 10px;
+}
+
+.individual-chat-box input {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: #06130f;
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.individual-chat-box button {
+  border: 0;
+  border-radius: 8px;
+  background: #5eead4;
+  color: #06130f;
+  font-weight: 900;
 }
 
 .captain-actions {
@@ -2311,6 +2409,14 @@ button {
   }
 
   .rider-request-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .captain-decision-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .individual-chat-box div {
     grid-template-columns: 1fr;
   }
 
