@@ -1799,6 +1799,90 @@ button {
   font-weight: 800;
 }
 
+.qr-image-preview {
+  display: block;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  background: #ffffff;
+  padding: 6px;
+}
+
+.qr-pdf-preview {
+  display: grid;
+  place-items: center;
+  gap: 4px;
+  width: 136px;
+  height: 136px;
+  border-radius: 8px;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 10px;
+  text-align: center;
+}
+
+.qr-pdf-preview strong {
+  color: #fde68a;
+  font-size: 24px;
+}
+
+.qr-pdf-preview span {
+  max-width: 100%;
+  color: #d7dee0;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.qr-upload-preview {
+  border-radius: 8px;
+  border: 1px solid rgba(94, 234, 212, 0.22);
+  background: rgba(94, 234, 212, 0.06);
+  padding: 14px;
+}
+
+.qr-upload-preview span,
+.qr-upload-preview small {
+  display: block;
+  color: #aab6ba;
+  font-size: 13px;
+}
+
+.qr-upload-preview span {
+  margin-bottom: 10px;
+}
+
+.qr-upload-preview button,
+.saved-qr-summary button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
+.qr-upload-preview img,
+.saved-qr-summary img {
+  width: 136px;
+  height: 136px;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  background: #ffffff;
+  padding: 8px;
+}
+
+.qr-upload-preview .qr-pdf-preview,
+.saved-qr-summary .qr-pdf-preview {
+  width: 136px;
+  height: 136px;
+}
+
+.qr-upload-preview strong,
+.saved-qr-summary strong {
+  display: block;
+  color: #fde68a;
+  margin-bottom: 8px;
+}
+
 .route-card-heading {
   display: flex;
   justify-content: space-between;
@@ -1888,6 +1972,7 @@ button {
 
 .captain-dashboard-hero,
 .captain-target-card,
+.captain-dashboard-payment,
 .captain-rating-panel {
   grid-column: 1 / -1;
 }
@@ -1923,6 +2008,43 @@ button {
 .captain-target-card small {
   color: #aab6ba;
   line-height: 1.4;
+}
+
+.captain-dashboard-payment {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+}
+
+.captain-dashboard-payment span,
+.captain-dashboard-payment small {
+  display: block;
+  color: #aab6ba;
+}
+
+.captain-dashboard-payment h3 {
+  margin: 6px 0;
+  color: #5eead4;
+}
+
+.captain-dashboard-payment p {
+  color: #d7dee0;
+}
+
+.dashboard-qr-button {
+  border: 0;
+  background: transparent;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  color: #aab6ba;
+  cursor: pointer;
+}
+
+.dashboard-qr-preview {
+  width: 104px;
+  height: 104px;
 }
 
 .target-card-heading {
@@ -2493,6 +2615,36 @@ button {
   height: 220px;
   margin: 22px auto 18px;
   font-size: 32px;
+}
+
+.qr-scan-image {
+  display: block;
+  width: min(260px, 80vw);
+  height: min(260px, 80vw);
+  object-fit: contain;
+  margin: 22px auto 18px;
+  border-radius: 8px;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  background: #ffffff;
+  padding: 10px;
+}
+
+.qr-pdf-viewer {
+  display: block;
+  width: min(340px, 84vw);
+  height: min(420px, 70vh);
+  margin: 22px auto 18px;
+  border-radius: 8px;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  background: #ffffff;
+}
+
+.qr-pdf-viewer a {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: #06130f;
+  font-weight: 900;
 }
 
 .qr-modal h3 {

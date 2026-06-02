@@ -1410,7 +1410,9 @@ export default function App() {
     ifsc: 'RRLY0002045',
     accountHolder: 'Rahul Captain',
     accountLast4: '2045',
-    qrFileName: 'No QR uploaded'
+    qrFileName: 'No QR uploaded',
+    qrPreviewUrl: '',
+    qrFileType: ''
   });
   const [captainRequests, setCaptainRequests] = useState(initialCaptainRequests);
   const [captainPanelMessage, setCaptainPanelMessage] = useState('Captain can accept rider requests, confirm pickup presence, start ride, and complete ride.');
@@ -2347,11 +2349,26 @@ export default function App() {
       return;
     }
 
-    setCaptainProfile((current) => ({
-      ...current,
-      qrFileName: file.name
-    }));
-    setCaptainPaymentStatus(`${file.name} selected. Submit to save QR for rider payments.`);
+    const isImageQr = file.type.startsWith('image/');
+    const isPdfQr = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+    if (!isImageQr && !isPdfQr) {
+      setCaptainPaymentStatus('Upload PNG, JPG, JPEG, or PDF QR only.');
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      setCaptainProfile((current) => ({
+        ...current,
+        qrFileName: file.name,
+        qrPreviewUrl: reader.result,
+        qrFileType: isPdfQr ? 'pdf' : 'image'
+      }));
+      setCaptainPaymentStatus(`${file.name} selected and stored in Captain payment record. Submit to confirm.`);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleCaptainPaymentSubmit = (event) => {
@@ -2362,7 +2379,7 @@ export default function App() {
       return;
     }
 
-    setCaptainPaymentStatus('Payment receiving details saved. Riders can pay after ride completion.');
+    setCaptainPaymentStatus(`Payment receiving details saved. ${captainProfile.qrPreviewUrl ? 'QR record is available for rider scanning/viewing.' : 'No QR file is uploaded yet.'}`);
   };
 
   const handleCaptainRouteSubmit = (event) => {
@@ -2523,7 +2540,9 @@ export default function App() {
         ifsc: '',
         accountHolder: signupForm.fullName,
         accountLast4: signupForm.vehicleNumber.slice(-4) || '0000',
-        qrFileName: 'No QR uploaded'
+        qrFileName: 'No QR uploaded',
+        qrPreviewUrl: '',
+        qrFileType: ''
       });
     }
 
@@ -3112,6 +3131,30 @@ export default function App() {
     : captainDashboardReviews.filter((review) => review.mood === captainRatingFilter);
   const happyReviewCount = captainDashboardReviews.filter((review) => review.mood === 'Happy').length;
   const captainRatingScore = Math.max(1, Math.min(5, (4 + happyReviewCount * 0.2).toFixed(1)));
+  const hasCaptainQrRecord = Boolean(captainProfile.qrPreviewUrl);
+  const isCaptainQrPdf = captainProfile.qrFileType === 'pdf';
+  const renderCaptainQrPreview = (className = '') => {
+    if (!hasCaptainQrRecord) {
+      return <span className={`qr-box ${className}`.trim()}>QR</span>;
+    }
+
+    if (isCaptainQrPdf) {
+      return (
+        <div className={`qr-pdf-preview ${className}`.trim()}>
+          <strong>PDF</strong>
+          <span>{captainProfile.qrFileName}</span>
+        </div>
+      );
+    }
+
+    return (
+      <img
+        className={`qr-image-preview ${className}`.trim()}
+        src={captainProfile.qrPreviewUrl}
+        alt="Captain uploaded payment QR"
+      />
+    );
+  };
 
   return (
     <div className="app">
@@ -4034,6 +4077,19 @@ export default function App() {
                   )}
                 </div>
 
+                <div className="panel-card captain-dashboard-payment">
+                  <div>
+                    <span>Payment QR / UPI</span>
+                    <h3>{captainProfile.upiId}</h3>
+                    <p>{captainProfile.accountHolder} . {captainProfile.bankName}</p>
+                    <small>{hasCaptainQrRecord ? `Saved file: ${captainProfile.qrFileName}` : 'No QR file uploaded yet.'}</small>
+                  </div>
+                  <button className="dashboard-qr-button" type="button" onClick={() => setIsQrPreviewOpen(true)}>
+                    {renderCaptainQrPreview('dashboard-qr-preview')}
+                    <small>View QR</small>
+                  </button>
+                </div>
+
                 <div className="panel-card dashboard-stat-card">
                   <span>Total Rides</span>
                   <strong>{captainTotalRideCount}</strong>
@@ -4546,7 +4602,7 @@ export default function App() {
                       <p>Add bank account, UPI ID, or upload QR code. Riders will use this after ride completion.</p>
                     </div>
                     <button className="qr-preview-button" type="button" onClick={() => setIsQrPreviewOpen(true)}>
-                      <span className="qr-box large-qr">QR</span>
+                      {renderCaptainQrPreview('large-qr')}
                       <small>View QR</small>
                     </button>
                   </div>
@@ -4595,8 +4651,20 @@ export default function App() {
 
                   <div className="form-group">
                     <label htmlFor="captain-qr">Upload QR Code</label>
-                    <input id="captain-qr" type="file" accept=".png,.jpg,.jpeg,.pdf" onChange={handleCaptainQrUpload} />
+                    <input id="captain-qr" type="file" accept="image/png,image/jpeg,.png,.jpg,.jpeg,.pdf" onChange={handleCaptainQrUpload} />
                     <small className="input-help">Selected file: {captainProfile.qrFileName}</small>
+                  </div>
+
+                  <div className="qr-upload-preview">
+                    <span>QR preview record</span>
+                    {hasCaptainQrRecord ? (
+                      <button type="button" onClick={() => setIsQrPreviewOpen(true)}>
+                        {renderCaptainQrPreview('')}
+                      </button>
+                    ) : (
+                      <strong>No QR file saved yet.</strong>
+                    )}
+                    <small>QR image or PDF is stored in this Captain payment record for rider scanning/viewing after completion.</small>
                   </div>
 
                   <div className="captain-message-bar">
@@ -4625,6 +4693,16 @@ export default function App() {
                     <div>
                       <span>QR file</span>
                       <strong>{captainProfile.qrFileName}</strong>
+                    </div>
+                    <div className="saved-qr-summary">
+                      <span>Saved QR preview</span>
+                      {hasCaptainQrRecord ? (
+                        <button type="button" onClick={() => setIsQrPreviewOpen(true)}>
+                          {renderCaptainQrPreview('')}
+                        </button>
+                      ) : (
+                        <strong>No QR file saved</strong>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -4683,10 +4761,18 @@ export default function App() {
         <div className="qr-modal-backdrop" role="presentation" onClick={() => setIsQrPreviewOpen(false)}>
           <div className="qr-modal" role="dialog" aria-modal="true" aria-label="Captain QR preview" onClick={(event) => event.stopPropagation()}>
             <button className="qr-modal-close" type="button" onClick={() => setIsQrPreviewOpen(false)}>Close</button>
-            <div className="qr-box qr-scan-box">QR</div>
+            {hasCaptainQrRecord && isCaptainQrPdf ? (
+              <object className="qr-pdf-viewer" data={captainProfile.qrPreviewUrl} type="application/pdf">
+                <a href={captainProfile.qrPreviewUrl} download={captainProfile.qrFileName}>Open uploaded QR PDF</a>
+              </object>
+            ) : hasCaptainQrRecord ? (
+              <img className="qr-scan-image" src={captainProfile.qrPreviewUrl} alt="Captain QR code for rider payment" />
+            ) : (
+              <div className="qr-box qr-scan-box">QR</div>
+            )}
             <h3>{captainProfile.upiId}</h3>
             <p>{captainProfile.accountHolder} . {captainProfile.bankName}</p>
-            <small>Moderate size preview for rider scanning after ride completion.</small>
+            <small>{hasCaptainQrRecord ? `Saved QR file: ${captainProfile.qrFileName}` : 'Upload PNG, JPG, JPEG, or PDF QR to display it here.'}</small>
           </div>
         </div>
       )}
