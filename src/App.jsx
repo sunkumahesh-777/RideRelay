@@ -736,7 +736,21 @@ const apiPreview = {
 };
 
 function getCaptainTargetMoney(distanceKm) {
-  return Math.max(80, Math.round(distanceKm * 10));
+  return Math.max(10, Math.round(distanceKm * 10));
+}
+
+function getCaptainRoutePricing(distanceKm, vacantSeats) {
+  const safeVacantSeats = Math.max(1, Number(vacantSeats) || 1);
+  const targetMoney = getCaptainTargetMoney(distanceKm);
+  const perRiderKm = 10 / safeVacantSeats;
+  const perRiderFare = targetMoney / safeVacantSeats;
+
+  return {
+    targetMoney,
+    perRiderKm,
+    perRiderFare,
+    vacantSeats: safeVacantSeats
+  };
 }
 
 function normalize(value) {
@@ -1280,7 +1294,7 @@ export default function App() {
     source: 'Ameerpet',
     destination: 'BHEL',
     vacantSeats: 2,
-    targetMoney: 180,
+    targetMoney: 176,
     status: 'Route not submitted'
   });
   const [captainChatMessage, setCaptainChatMessage] = useState('I received your request. Please wait near the pickup pin.');
@@ -2160,6 +2174,13 @@ export default function App() {
         nextRoute.targetMoney = getCaptainTargetMoney(getLegDistanceKm(from, to));
       }
 
+      if (field === 'vacantSeats') {
+        const from = resolveLocationArea(current.source);
+        const to = resolveLocationArea(current.destination);
+        nextRoute.vacantSeats = Math.max(1, Number(value) || 1);
+        nextRoute.targetMoney = getCaptainTargetMoney(getLegDistanceKm(from, to));
+      }
+
       return nextRoute;
     });
     setCaptainRouteAlert('Route changes are in draft. Submit to alert riders.');
@@ -2225,17 +2246,18 @@ export default function App() {
       return;
     }
 
-    const suggestedTarget = getCaptainTargetMoney(routeDistance);
+    const pricing = getCaptainRoutePricing(routeDistance, captainRoute.vacantSeats);
+    const suggestedTarget = pricing.targetMoney;
 
     setCaptainRoute((current) => ({
       ...current,
       source: routeSource,
       destination: routeDestination,
-      vacantSeats: Math.max(1, current.vacantSeats || 1),
+      vacantSeats: pricing.vacantSeats,
       targetMoney: suggestedTarget,
-      status: `Active route submitted. ${routeDistance.toFixed(1)} km path, ${Math.max(1, captainRoute.vacantSeats || 1)} vacant seat${Number(captainRoute.vacantSeats) === 1 ? '' : 's'}, Rs ${suggestedTarget} target.`
+      status: `Active route submitted. ${routeDistance.toFixed(1)} km path, Rs 10/km target, ${pricing.vacantSeats} shared rider${pricing.vacantSeats === 1 ? '' : 's'}, Rs ${Math.ceil(pricing.perRiderFare)} each.`
     }));
-    const routeMessage = `Captain route ${routeSource} to ${routeDestination} submitted with ${Math.max(1, captainRoute.vacantSeats || 1)} vacant seat${Number(captainRoute.vacantSeats) === 1 ? '' : 's'} and Rs ${suggestedTarget} pocket target. Matching riders will receive this route alert.`;
+    const routeMessage = `Captain route ${routeSource} to ${routeDestination}: ${routeDistance.toFixed(1)} km x Rs 10 = Rs ${suggestedTarget}. Split across ${pricing.vacantSeats} rider${pricing.vacantSeats === 1 ? '' : 's'} at about Rs ${pricing.perRiderKm.toFixed(1)}/km, Rs ${Math.ceil(pricing.perRiderFare)} each. Matching riders will receive this route alert.`;
     setCaptainPanelMessage(routeMessage);
     setCaptainRouteAlert(routeMessage);
     setCaptainRouteUpdated(true);
@@ -2716,6 +2738,7 @@ export default function App() {
   const captainRouteSource = resolveLocationArea(captainRoute.source);
   const captainRouteDestination = resolveLocationArea(captainRoute.destination);
   const captainRouteDistance = getLegDistanceKm(captainRouteSource, captainRouteDestination);
+  const captainRoutePricing = getCaptainRoutePricing(captainRouteDistance, captainRoute.vacantSeats);
   const captainVisibleRequests = captainRequests.filter((request) => isCaptainHopAligned(request, captainRouteSource, captainRouteDestination));
   const sameDestinationCount = captainVisibleRequests.filter((request) => normalize(request.destination) === normalize(captainRouteDestination)).length;
   const captainPendingCount = captainVisibleRequests.filter((request) => request.status === 'pending').length;
@@ -3654,7 +3677,7 @@ export default function App() {
                         readOnly
                         placeholder="Expected amount"
                       />
-                      <small className="input-help">Auto-calculated from distance. Minimum target is Rs 80.</small>
+                      <small className="input-help">Auto-calculated as route kilometers x Rs 10.</small>
                     </div>
                   </div>
 
@@ -3705,6 +3728,10 @@ export default function App() {
                         <div>
                           <span>Pocket target</span>
                           <strong>Rs {captainRoute.targetMoney}</strong>
+                        </div>
+                        <div>
+                          <span>Rider split</span>
+                          <strong>Rs {captainRoutePricing.perRiderKm.toFixed(1)}/km each</strong>
                         </div>
                       </div>
 
@@ -3783,6 +3810,10 @@ export default function App() {
                     <div>
                       <span>Pocket target</span>
                       <strong>Rs {captainRoute.targetMoney}</strong>
+                    </div>
+                    <div>
+                      <span>Per rider estimate</span>
+                      <strong>Rs {Math.ceil(captainRoutePricing.perRiderFare)} total</strong>
                     </div>
                   </div>
 
