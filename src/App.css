@@ -2119,6 +2119,105 @@ button {
   font-weight: 900;
 }
 
+.relay-point-strip {
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid rgba(94, 234, 212, 0.24);
+  border-radius: 8px;
+  background: rgba(94, 234, 212, 0.07);
+}
+
+.relay-point-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.relay-point-heading span,
+.relay-point-grid small,
+.location-result-meta,
+.nearby-pin small {
+  color: #aab6ba;
+  font-size: 12px;
+}
+
+.relay-point-heading strong {
+  color: #fde68a;
+  font-size: 13px;
+}
+
+.relay-point-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.relay-point-card,
+.nearby-pin {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  padding: 12px;
+  text-align: left;
+}
+
+.relay-point-card:hover,
+.relay-point-card.selected,
+.nearby-pin:hover,
+.nearby-pin.selected {
+  border-color: rgba(94, 234, 212, 0.72);
+  background: rgba(94, 234, 212, 0.14);
+}
+
+.relay-point-card button,
+.nearby-pin button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.relay-point-grid span,
+.nearby-pin span {
+  display: block;
+  color: #5eead4;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.relay-point-grid strong,
+.nearby-pin strong {
+  display: block;
+  margin: 4px 0;
+  color: #ffffff;
+  overflow-wrap: anywhere;
+}
+
+.relay-point-card a,
+.nearby-pin a {
+  display: inline-flex;
+  margin-top: 10px;
+  border: 1px solid rgba(253, 230, 138, 0.35);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: rgba(253, 230, 138, 0.1);
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.relay-point-card a:hover,
+.nearby-pin a:hover {
+  background: rgba(253, 230, 138, 0.18);
+}
+
 .rating-dialogue-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2743,6 +2842,57 @@ button {
   gap: 12px;
 }
 
+.location-panel-grid {
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+  align-items: start;
+}
+
+.location-hub-card {
+  max-height: 760px;
+  overflow: hidden;
+}
+
+.location-panel-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.location-panel-heading strong {
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  border-radius: 999px;
+  color: #99f6e4;
+  background: rgba(94, 234, 212, 0.09);
+}
+
+.nearby-pin-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.location-result-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0 12px;
+}
+
+.location-result-meta strong {
+  color: #fde68a;
+}
+
+.compact-location-list {
+  max-height: 430px;
+  overflow: auto;
+  padding-right: 6px;
+  scrollbar-color: rgba(94, 234, 212, 0.45) rgba(255, 255, 255, 0.06);
+}
+
 .trip-row,
 .location-row,
 .offer-row,
@@ -2765,6 +2915,12 @@ button {
 
 .location-row {
   align-items: flex-start;
+  min-height: 92px;
+}
+
+.pickup-safety-card {
+  position: sticky;
+  top: 132px;
 }
 
 .library-search {
@@ -3085,6 +3241,20 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .relay-point-grid,
+  .nearby-pin-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .location-panel-heading,
+  .relay-point-heading {
+    flex-direction: column;
+  }
+
+  .pickup-safety-card {
+    position: static;
+  }
+
   .route-map-single {
     grid-template-columns: 34px 1fr 34px;
   }
@@ -3179,5 +3349,23 @@ button {
   .auth-open-actions,
   .captain-actions {
     grid-template-columns: 1fr;
+  }
+
+  .relay-point-grid,
+  .nearby-pin-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .compact-location-list {
+    max-height: 360px;
+  }
+
+  .location-row {
+    flex-direction: column;
+  }
+
+  .location-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 }

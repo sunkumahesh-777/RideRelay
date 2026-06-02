@@ -877,6 +877,10 @@ function getDistanceKm(from, to) {
   return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+function getCoordinateDistanceKm(from, to) {
+  return getDistanceKm(from, to) ?? 0;
+}
+
 function getBearingDegrees(from, to) {
   if (!from || !to) {
     return 0;
@@ -1048,6 +1052,12 @@ function getRadiusLabel(distanceMeters) {
 
 function getGoogleMapsUrl(location) {
   return `https://www.google.com/maps/search/?api=1&query=${location.lat},${location.lng}`;
+}
+
+function getNativeMapUrl(location) {
+  const label = encodeURIComponent(`${location.name}, ${location.area}`);
+
+  return `geo:${location.lat},${location.lng}?q=${location.lat},${location.lng}(${label})`;
 }
 
 function getPinStyle(location) {
@@ -1599,6 +1609,23 @@ export default function App() {
       return categoryMatches && textMatches;
     });
   }, [locationSearch, locationCategory]);
+
+  const nearbyRideRelayPoints = useMemo(() => {
+    const pickupPoint = getLocationPoint(pickup);
+
+    return locationLibrary
+      .map((location) => ({
+        ...location,
+        distanceMeters: pickupPoint
+          ? Math.round(getCoordinateDistanceKm(pickupPoint, location) * 1000)
+          : 0
+      }))
+      .filter((location) => !pickupPoint || location.distanceMeters <= 1500)
+      .sort((a, b) => a.distanceMeters - b.distanceMeters)
+      .slice(0, 6);
+  }, [pickup]);
+
+  const visibleLocationResults = filteredLocations.slice(0, 18);
 
   const captainSuggestedRoutes = useMemo(() => {
     const source = resolveLocationArea(captainRoute.source);
@@ -2326,8 +2353,17 @@ export default function App() {
       return;
     }
 
+    if (paymentMethod === 'Wallet' && walletBalance < selectedPickupRider.fare) {
+      setPaymentStatus('Wallet balance is low. Add money or choose another method.');
+      return;
+    }
+
     const requestKey = selectedLeg ? `leg-${selectedLeg.step}-${selectedPickupRider.id}` : `direct-captain-${selectedPickupRider.id}`;
     const backendRequestId = backendRideRequestIds[requestKey] || backendRideRequestIds[`direct-${bookedRideId}`];
+
+    if (paymentMethod === 'Wallet') {
+      setWalletBalance((balance) => Math.max(0, balance - selectedPickupRider.fare));
+    }
 
     setRideStage('paid');
     if (selectedLeg) {
@@ -2336,7 +2372,7 @@ export default function App() {
     } else {
       setJourneyComplete(true);
     }
-    setPaymentStatus(`Payment successful. ${selectedPickupRider.name} received Rs ${selectedPickupRider.fare}.`);
+    setPaymentStatus(`Payment successful. ${selectedPickupRider.name} received Rs ${selectedPickupRider.fare}${paymentMethod === 'Wallet' ? ' from wallet' : ''}.`);
 
     if (backendRequestId) {
       try {
@@ -3569,6 +3605,14 @@ export default function App() {
     captainRoute.vacantSeats
   );
   const arrangedFareByRequestId = new Map(arrangedRiderPlan.arrangedRiders.map((request) => [request.id, request.fare]));
+  const captainControlRequests = captainCurrentPendingRequests
+    .filter((request) => request.status !== 'declined')
+    .map((request, index) => ({
+      ...request,
+      order: index + 1,
+      leg: request.status === 'ride-completed' ? 'Completed Leg' : `Leg Step ${index + 1}`,
+      fare: arrangedFareByRequestId.get(request.id) ?? request.fare
+    }));
   const targetFitRiders = arrangedRiderPlan.targetRiders;
   const targetFitAmount = arrangedRiderPlan.targetFare;
   const targetGap = sessionTargetRemaining;
@@ -3691,7 +3735,29 @@ export default function App() {
                 {pickup} to {destination}
               </strong>
             </div>
-            <button onClick={() => setActivePanel('locations')}>Open Location Library</button>
+            <button onClick={() => setActivePanel('locations')}>RideRelay Points</button>
+          </div>
+
+          <div className="relay-point-strip">
+            <div className="relay-point-heading">
+              <span>GPS safe pickup points near {pickup}</span>
+              <strong>Captain receives selected pin only</strong>
+            </div>
+            <div className="relay-point-grid">
+              {nearbyRideRelayPoints.map((location) => (
+                <div
+                  className={normalize(pickup) === normalize(location.area) ? 'relay-point-card selected' : 'relay-point-card'}
+                  key={`nearby-${location.id}`}
+                >
+                  <button type="button" onClick={() => handleUseLocation(location, 'pickup')}>
+                    <span>{location.type}</span>
+                    <strong>{location.area}</strong>
+                    <small>{location.pickupHint} . {location.distanceMeters}m</small>
+                  </button>
+                  <a href={getNativeMapUrl(location)} rel="noreferrer" target="_blank">Navigate</a>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="form-group">
@@ -4421,10 +4487,32 @@ export default function App() {
             )}
 
             {activePanel === 'locations' && (
-              <div className="panel-grid">
-                <div className="panel-card">
-                  <h3>Location Library</h3>
-                  <p>{locationLibrary.length} Hyderabad locations loaded with map coordinates. Search, select, or open any place.</p>
+              <div className="panel-grid location-panel-grid">
+                <div className="panel-card location-hub-card">
+                  <div className="location-panel-heading">
+                    <div>
+                      <h3>RideRelay Pickup Points</h3>
+                      <p>Use GPS-safe public pins like bus stops, metro gates, junctions, and campus gates. Captain sees only the assigned pickup pin.</p>
+                    </div>
+                    <strong>{nearbyRideRelayPoints.length} nearby</strong>
+                  </div>
+
+                  <div className="nearby-pin-panel">
+                    {nearbyRideRelayPoints.map((location) => (
+                      <div
+                        className={selectedLocationId === location.id ? 'nearby-pin selected' : 'nearby-pin'}
+                        key={`safe-${location.id}`}
+                      >
+                        <button type="button" onClick={() => handleUseLocation(location, 'pickup')}>
+                          <span>{location.distanceMeters}m</span>
+                          <strong>{location.area}</strong>
+                          <small>{location.name} . {location.pickupHint}</small>
+                        </button>
+                        <a href={getNativeMapUrl(location)} rel="noreferrer" target="_blank">Navigate</a>
+                      </div>
+                    ))}
+                  </div>
+
                   <div className="form-group library-search">
                     <label htmlFor="location-search">Search Location</label>
                     <input
@@ -4445,8 +4533,12 @@ export default function App() {
                       </button>
                     ))}
                   </div>
-                  <div className="location-list">
-                    {filteredLocations.map((location) => (
+                  <div className="location-result-meta">
+                    <span>{filteredLocations.length} matching places</span>
+                    <strong>Showing best {visibleLocationResults.length}</strong>
+                  </div>
+                  <div className="location-list compact-location-list">
+                    {visibleLocationResults.map((location) => (
                       <div className={selectedLocationId === location.id ? 'location-row selected' : 'location-row'} key={location.id}>
                         <div>
                           <strong>{location.name}</strong>
@@ -4464,12 +4556,14 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="panel-card safety-list">
-                  <h3>Route Tools</h3>
-                  <p>Quickly switch common routes or reuse your home stop from profile.</p>
-                  <span>Pickup: {pickup}</span>
-                  <span>Destination: {destination}</span>
+                <div className="panel-card safety-list pickup-safety-card">
+                  <h3>Pickup Safety Flow</h3>
+                  <p>RideRelay points behave like safe bus-stop pickup pins. They help Captain identify the rider without exposing unnecessary full journey details.</p>
+                  <span>Pickup pin: {pickup}</span>
+                  <span>Drop point: {destination}</span>
                   <span>Home stop: {riderProfile.home}</span>
+                  <span>GPS check: within 500m</span>
+                  <span>Shared to Captain: pickup pin only</span>
                   <button className="panel-action" onClick={() => setPickup(riderProfile.home)}>Use Home As Pickup</button>
                 </div>
               </div>
@@ -4952,7 +5046,7 @@ export default function App() {
                   </div>
 
                   <div className="captain-request-list">
-                    {arrangedRiderPlan.arrangedRiders.length ? arrangedRiderPlan.arrangedRiders.map((request) => (
+                    {captainControlRequests.length ? captainControlRequests.map((request) => (
                       <div className="captain-request" key={request.id}>
                         <div className="match-header">
                           <div>
@@ -5040,8 +5134,8 @@ export default function App() {
                       </div>
                     )) : (
                       <div className="captain-request">
-                        <h5>No route-matching rider hops</h5>
-                        <p>This Captain route will show only rider hop pickup and destination points that move toward {captainRouteDestination}.</p>
+                        <h5>No rider control records yet</h5>
+                        <p>Captain controls will stay visible here after accept, start, end ride, and completion.</p>
                       </div>
                     )}
                   </div>
