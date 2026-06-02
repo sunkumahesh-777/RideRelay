@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 
 const assetPath = (fileName) => `${import.meta.env.BASE_URL}${fileName}`;
 const SESSION_STORAGE_KEY = 'riderelay-session';
+const ACTIVE_CAPTAIN_REQUEST_STATUSES = ['accepted', 'present-at-pickup', 'ride-started'];
+
+function isActiveCaptainRequest(request) {
+  return ACTIVE_CAPTAIN_REQUEST_STATUSES.includes(request.status);
+}
 
 const liveDrivers = [
   {
@@ -2541,6 +2546,32 @@ export default function App() {
 
   const handleCaptainAccept = (requestId) => {
     const request = captainRequests.find((item) => item.id === requestId);
+
+    if (!request) {
+      return;
+    }
+
+    const activePickupSeatCount = captainRequests.filter((item) => (
+      isActiveCaptainRequest(item)
+      && normalize(item.pickup) === normalize(request.pickup)
+    )).length;
+    const vacantSeatLimit = Math.max(1, Number(captainRoute.vacantSeats) || 1);
+
+    if (activePickupSeatCount >= vacantSeatLimit) {
+      const fullMessage = `${request.pickup} vehicle has been full. New rider alerts are stopped for this pickup pin until one seat is free.`;
+
+      updateCaptainRequest(
+        requestId,
+        {
+          captainMessage: fullMessage,
+          alertSentAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        },
+        fullMessage
+      );
+      setCaptainRouteAlert(fullMessage);
+      return;
+    }
+
     updateCaptainRequest(
       requestId,
       {
@@ -2605,6 +2636,34 @@ export default function App() {
     const request = captainRequests.find((item) => item.id === requestId);
     const isCompleted = status === 'ride-completed';
     const completedFare = sharedFare ?? request?.fare ?? 0;
+
+    if (!request) {
+      return;
+    }
+
+    if (status === 'ride-started') {
+      const pickupRunningRideCount = captainRequests.filter((item) => (
+        item.status === 'ride-started'
+        && normalize(item.pickup) === normalize(request.pickup)
+        && item.id !== requestId
+      )).length;
+      const vacantSeatLimit = Math.max(1, Number(captainRoute.vacantSeats) || 1);
+
+      if (pickupRunningRideCount >= vacantSeatLimit) {
+        const fullMessage = `${request.pickup} vehicle has been full. Start Ride is locked until one rider completes or a seat becomes free.`;
+
+        updateCaptainRequest(
+          requestId,
+          {
+            captainMessage: fullMessage,
+            alertSentAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          },
+          fullMessage
+        );
+        setCaptainRouteAlert(fullMessage);
+        return;
+      }
+    }
 
     if (isCompleted) {
       setCaptainSession((current) => ({
@@ -2902,9 +2961,31 @@ export default function App() {
   const captainRouteDistance = getLegDistanceKm(captainRouteSource, captainRouteDestination);
   const captainRoutePricing = getCaptainRoutePricing(captainRouteDistance, captainRoute.vacantSeats);
   const captainVisibleRequests = captainRequests.filter((request) => isCaptainHopAligned(request, captainRouteSource, captainRouteDestination));
+  const pickupSeatLimit = Math.max(1, Number(captainRoute.vacantSeats) || 1);
+  const fullPickupPins = captainVisibleRequests.reduce((pins, request) => {
+    if (!isActiveCaptainRequest(request)) {
+      return pins;
+    }
+
+    const pickupKey = normalize(request.pickup);
+    const activePickupSeats = captainVisibleRequests.filter((item) => (
+      isActiveCaptainRequest(item)
+      && normalize(item.pickup) === pickupKey
+    )).length;
+
+    return activePickupSeats >= pickupSeatLimit ? [...new Set([...pins, request.pickup])] : pins;
+  }, []);
+  const stoppedPickupRequests = captainVisibleRequests.filter((request) => (
+    request.status === 'pending'
+    && fullPickupPins.some((pickupPin) => normalize(pickupPin) === normalize(request.pickup))
+  ));
+  const captainFeedRequests = captainVisibleRequests.filter((request) => (
+    request.status !== 'pending'
+    || !fullPickupPins.some((pickupPin) => normalize(pickupPin) === normalize(request.pickup))
+  ));
   const sameDestinationCount = captainVisibleRequests.filter((request) => normalize(request.destination) === normalize(captainRouteDestination)).length;
-  const captainPendingCount = captainVisibleRequests.filter((request) => request.status === 'pending').length;
-  const captainAcceptedCount = captainVisibleRequests.filter((request) => request.status === 'accepted' || request.status === 'present-at-pickup' || request.status === 'ride-started').length;
+  const captainPendingCount = captainFeedRequests.filter((request) => request.status === 'pending').length;
+  const captainAcceptedCount = captainVisibleRequests.filter((request) => isActiveCaptainRequest(request)).length;
   const captainDeclinedCount = captainVisibleRequests.filter((request) => request.status === 'declined').length;
   const acceptedCaptainRequests = captainVisibleRequests.filter((request) => ['accepted', 'present-at-pickup', 'ride-started', 'ride-completed'].includes(request.status));
   const declinedCaptainRequests = captainVisibleRequests.filter((request) => request.status === 'declined');
@@ -2912,7 +2993,7 @@ export default function App() {
   const completedRiderTotalAmount = captainSession.coveredMoney;
   const sessionTargetRemaining = Math.max(0, captainSession.targetMoney - captainSession.coveredMoney);
   const arrangedRiderPlan = getArrangedCaptainRiderPlan(
-    captainVisibleRequests,
+    captainFeedRequests,
     captainRouteSource,
     captainRouteDestination,
     sessionTargetRemaining || captainRoute.targetMoney,
@@ -3928,6 +4009,9 @@ export default function App() {
                       <span>{captainAcceptedCount} active</span>
                       <span>{captainDeclinedCount} declined</span>
                       <span>{captainRoute.vacantSeats} vacant</span>
+                      {stoppedPickupRequests.length > 0 && (
+                        <span>{stoppedPickupRequests.length} stopped alert{stoppedPickupRequests.length === 1 ? '' : 's'}</span>
+                      )}
                     </div>
                   </div>
 
@@ -4051,6 +4135,19 @@ export default function App() {
                     </div>
                   </div>
 
+                  {stoppedPickupRequests.length > 0 && (
+                    <div className="route-alert-box vehicle-full-alert">
+                      <span>Vehicle full alert</span>
+                      <strong>
+                        {fullPickupPins.join(', ')} vehicle has been full. New rider alerts are stopped for these pickup pins.
+                      </strong>
+                      <small>
+                        Hidden pending riders: {stoppedPickupRequests.map((request) => request.rider).join(', ')}.
+                        They will reappear after a seat becomes free or the Captain completes a ride.
+                      </small>
+                    </div>
+                  )}
+
                   <div className="captain-decision-grid">
                     <div className="captain-decision-box">
                       <h4>Details Of Riders</h4>
@@ -4142,12 +4239,33 @@ export default function App() {
                         </div>
 
                         <div className="captain-actions">
-                          <button onClick={() => handleCaptainAccept(request.id)} disabled={request.status !== 'pending'}>Accept Request</button>
+                          <button
+                            onClick={() => handleCaptainAccept(request.id)}
+                            disabled={request.status !== 'pending' || fullPickupPins.some((pickupPin) => normalize(pickupPin) === normalize(request.pickup))}
+                          >
+                            {fullPickupPins.some((pickupPin) => normalize(pickupPin) === normalize(request.pickup)) ? 'Vehicle Full' : 'Accept Request'}
+                          </button>
                           <button onClick={() => handleCaptainDecline(request.id)} disabled={request.status !== 'pending'}>Decline</button>
                           <button onClick={() => handleCaptainSendAlert(request.id)}>Send Alert</button>
                           <button onClick={() => handleCaptainPresence(request.id, true)} disabled={!['accepted', 'location-alert'].includes(request.status)}>Rider Confirms Present</button>
                           <button onClick={() => handleCaptainPresence(request.id, false)} disabled={!['accepted', 'present-at-pickup'].includes(request.status)}>Rider Says Not At Location</button>
-                          <button onClick={() => handleCaptainRideStatus(request.id, 'ride-started')} disabled={request.status !== 'present-at-pickup'}>Start Ride</button>
+                          <button
+                            onClick={() => handleCaptainRideStatus(request.id, 'ride-started')}
+                            disabled={
+                              request.status !== 'present-at-pickup'
+                              || captainVisibleRequests.filter((item) => (
+                                item.status === 'ride-started'
+                                && normalize(item.pickup) === normalize(request.pickup)
+                                && item.id !== request.id
+                              )).length >= pickupSeatLimit
+                            }
+                          >
+                            {captainVisibleRequests.filter((item) => (
+                              item.status === 'ride-started'
+                              && normalize(item.pickup) === normalize(request.pickup)
+                              && item.id !== request.id
+                            )).length >= pickupSeatLimit ? 'Seats Full' : 'Start Ride'}
+                          </button>
                           <button onClick={() => handleCaptainRideStatus(request.id, 'ride-completed', request.fare)} disabled={request.status !== 'ride-started'}>End Ride</button>
                         </div>
                       </div>
