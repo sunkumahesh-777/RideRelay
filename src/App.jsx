@@ -667,6 +667,42 @@ const signupFields = {
 
 const initialCaptainRequests = [
   {
+    id: 'CR-208',
+    rider: 'Arvind Reddy',
+    pickup: 'LB Nagar',
+    destination: 'Lakdikapul',
+    leg: 'Leg Step 1',
+    fare: 120,
+    eta: 6,
+    distanceMeters: 360,
+    status: 'pending',
+    presence: 'not-confirmed'
+  },
+  {
+    id: 'CR-209',
+    rider: 'Fatima Begum',
+    pickup: 'Lakdikapul',
+    destination: 'Ameerpet',
+    leg: 'Leg Step 2',
+    fare: 90,
+    eta: 5,
+    distanceMeters: 410,
+    status: 'pending',
+    presence: 'not-confirmed'
+  },
+  {
+    id: 'CR-210',
+    rider: 'Rohit Varma',
+    pickup: 'Ameerpet',
+    destination: 'BHEL',
+    leg: 'Leg Step 3',
+    fare: 150,
+    eta: 5,
+    distanceMeters: 450,
+    status: 'pending',
+    presence: 'not-confirmed'
+  },
+  {
     id: 'CR-204',
     rider: 'Ananya Rao',
     pickup: 'Ameerpet',
@@ -1059,6 +1095,55 @@ function getTargetFitRiders(requests, targetMoney) {
     runningTotal += request.fare;
     return true;
   });
+}
+
+function getArrangedCaptainRiderPlan(requests, captainSource, captainDestination, targetMoney) {
+  const routeReadyRequests = requests
+    .filter((request) => request.status !== 'declined' && request.status !== 'ride-completed')
+    .map((request) => {
+      const pickupProgress = getLegDistanceKm(captainSource, request.pickup);
+      const dropProgress = getLegDistanceKm(captainSource, request.destination);
+      const legDistance = getLegDistanceKm(request.pickup, request.destination);
+
+      return {
+        ...request,
+        pickupProgress,
+        dropProgress,
+        legDistance
+      };
+    })
+    .filter((request) => request.dropProgress > request.pickupProgress)
+    .sort((a, b) => (
+      a.pickupProgress - b.pickupProgress
+      || a.dropProgress - b.dropProgress
+      || b.fare - a.fare
+    ));
+  let targetFare = 0;
+  const targetRiders = [];
+  const arrangedRiders = routeReadyRequests.map((request, index) => {
+    const farePerKm = request.fare / Math.max(1, request.legDistance);
+    const arrangedRequest = {
+      ...request,
+      order: index + 1,
+      farePerKm,
+      coverageAfter: Math.min(targetMoney, targetFare + request.fare)
+    };
+
+    if (targetFare < targetMoney) {
+      targetFare += request.fare;
+      targetRiders.push(arrangedRequest);
+    }
+
+    return arrangedRequest;
+  });
+
+  return {
+    arrangedRiders,
+    targetRiders,
+    totalFare: arrangedRiders.reduce((total, request) => total + request.fare, 0),
+    targetFare,
+    targetReached: targetFare >= targetMoney
+  };
 }
 
 function findConnectedPlans(pickup, destination, eligibleRides, limit = 3) {
@@ -2796,15 +2881,21 @@ export default function App() {
   const completedCaptainRequests = captainVisibleRequests.filter((request) => request.status === 'ride-completed');
   const completedRiderTotalAmount = captainSession.coveredMoney;
   const sessionTargetRemaining = Math.max(0, captainSession.targetMoney - captainSession.coveredMoney);
-  const targetFitRiders = getTargetFitRiders(captainVisibleRequests, sessionTargetRemaining || captainRoute.targetMoney);
-  const targetFitAmount = targetFitRiders.reduce((total, request) => total + request.fare, 0);
+  const arrangedRiderPlan = getArrangedCaptainRiderPlan(
+    captainVisibleRequests,
+    captainRouteSource,
+    captainRouteDestination,
+    sessionTargetRemaining || captainRoute.targetMoney
+  );
+  const targetFitRiders = arrangedRiderPlan.targetRiders;
+  const targetFitAmount = arrangedRiderPlan.targetFare;
   const targetGap = sessionTargetRemaining;
-  const targetCanBeCovered = targetFitAmount >= targetGap;
+  const targetCanBeCovered = arrangedRiderPlan.targetReached || targetGap === 0;
   const captainWholeRideCompleted = completedCaptainRequests.length > 0
     && sessionTargetRemaining === 0;
   const pocketReducedAmount = Math.min(captainSession.targetMoney, completedRiderTotalAmount);
   const remainingTargetMoney = sessionTargetRemaining;
-  const riderHopPins = [...new Set(captainVisibleRequests.map((request) => `${request.pickup} -> ${request.destination}`))];
+  const riderHopPins = [...new Set(arrangedRiderPlan.arrangedRiders.map((request) => `${request.pickup} -> ${request.destination}`))];
 
   return (
     <div className="app">
@@ -3833,21 +3924,49 @@ export default function App() {
                   </div>
 
                   <div className={`route-alert-box target-fit-box ${targetCanBeCovered ? 'target-ready' : 'target-gap'}`}>
-                    <span>RideRelay charge per km arrangement</span>
+                    <span>RideRelay arranged rider chain</span>
                     <strong>
                       {targetGap === 0
                         ? 'Captain charge-per-km target is already covered for this session.'
                         : targetCanBeCovered
-                        ? `${targetFitRiders.length} rider${targetFitRiders.length === 1 ? '' : 's'} can cover the remaining Rs ${targetGap}.`
-                        : `Current matching riders cover Rs ${targetFitAmount}. Need Rs ${Math.max(0, targetGap - targetFitAmount)} more or more riders.`}
+                        ? `${targetFitRiders.length} arranged rider${targetFitRiders.length === 1 ? '' : 's'} can cover the remaining Rs ${targetGap} from start to destination.`
+                        : `Arranged riders cover Rs ${targetFitAmount}. Need Rs ${Math.max(0, targetGap - targetFitAmount)} more on this Captain journey.`}
                     </strong>
                     <small>
-                      Suggested: {targetGap === 0
+                      Route chain: {targetGap === 0
                         ? 'Close this session or start a new route session.'
                         : targetFitRiders.length
-                        ? targetFitRiders.map((request) => `${request.rider} Rs ${request.fare}`).join(', ')
-                        : 'No suitable rider combination yet.'}
+                        ? targetFitRiders.map((request) => `${request.pickup} to ${request.destination}: ${request.rider} Rs ${request.fare}`).join(' | ')
+                        : 'No suitable rider chain yet.'}
                     </small>
+                  </div>
+
+                  <div className="arranged-chain-panel">
+                    <div>
+                      <span>Captain journey coverage</span>
+                      <strong>{captainRouteSource} {'->'} {captainRouteDestination}</strong>
+                      <small>{arrangedRiderPlan.arrangedRiders.length} rider hop{arrangedRiderPlan.arrangedRiders.length === 1 ? '' : 's'} arranged in route order.</small>
+                    </div>
+                    <div>
+                      <span>Expected total from arranged riders</span>
+                      <strong>Rs {arrangedRiderPlan.totalFare}</strong>
+                      <small>Target riders selected until the session balance can be covered.</small>
+                    </div>
+                  </div>
+
+                  <div className="route-chain-list">
+                    {arrangedRiderPlan.arrangedRiders.length ? arrangedRiderPlan.arrangedRiders.map((request) => (
+                      <div className={targetFitRiders.some((targetRequest) => targetRequest.id === request.id) ? 'chain-step selected' : 'chain-step'} key={`chain-${request.id}`}>
+                        <span>Step {request.order}</span>
+                        <strong>{request.pickup} {'->'} {request.destination}</strong>
+                        <small>{request.rider} . Rs {request.fare} . {request.legDistance.toFixed(1)} km . Rs {request.farePerKm.toFixed(1)}/km</small>
+                      </div>
+                    )) : (
+                      <div className="chain-step">
+                        <strong>No arranged rider chain for this Captain route.</strong>
+                        <small>RideRelay needs riders whose hop pickup and hop destination move in the same route direction.</small>
+                      </div>
+                    )}
                   </div>
 
                   <div className="route-alert-box session-status-box">
@@ -3904,12 +4023,12 @@ export default function App() {
                   <div className="captain-decision-grid">
                     <div className="captain-decision-box">
                       <h4>Details Of Riders</h4>
-                      {captainVisibleRequests.length ? captainVisibleRequests.map((request, index) => (
+                      {arrangedRiderPlan.arrangedRiders.length ? arrangedRiderPlan.arrangedRiders.map((request, index) => (
                         <div className="decision-row" key={`decision-${request.id}`}>
                           <span>{index + 1}. {request.rider}</span>
                           <strong>Hop pickup: {request.pickup}</strong>
                           <strong>Hop destination: {request.destination}</strong>
-                          <small>{request.status} . Full rider journey hidden for safety.</small>
+                          <small>{request.status} . Step {request.order} in Captain route chain. Full rider journey hidden for safety.</small>
                         </div>
                       )) : <p>No route-matching rider hops for this Captain route.</p>}
                     </div>
@@ -3943,11 +4062,11 @@ export default function App() {
                   </div>
 
                   <div className="captain-request-list">
-                    {captainVisibleRequests.length ? captainVisibleRequests.map((request) => (
+                    {arrangedRiderPlan.arrangedRiders.length ? arrangedRiderPlan.arrangedRiders.map((request) => (
                       <div className="captain-request" key={request.id}>
                         <div className="match-header">
                           <div>
-                            <span className="route-label">{request.leg}</span>
+                            <span className="route-label">{request.leg} . Chain Step {request.order}</span>
                             <h5>{request.rider}</h5>
                             <p>Hop pickup: {request.pickup}. Hop destination: {request.destination}. Full rider journey hidden.</p>
                           </div>
