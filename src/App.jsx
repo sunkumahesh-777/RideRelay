@@ -1097,7 +1097,8 @@ function getTargetFitRiders(requests, targetMoney) {
   });
 }
 
-function getArrangedCaptainRiderPlan(requests, captainSource, captainDestination, targetMoney) {
+function getArrangedCaptainRiderPlan(requests, captainSource, captainDestination, targetMoney, vacantSeats) {
+  const safeVacantSeats = Math.max(1, Number(vacantSeats) || 1);
   const routeReadyRequests = requests
     .filter((request) => request.status !== 'declined' && request.status !== 'ride-completed')
     .map((request) => {
@@ -1118,24 +1119,52 @@ function getArrangedCaptainRiderPlan(requests, captainSource, captainDestination
       || a.dropProgress - b.dropProgress
       || b.fare - a.fare
     ));
+  const groupedByHop = routeReadyRequests.reduce((groups, request) => {
+    const key = `${normalize(request.pickup)}-${normalize(request.destination)}`;
+    const group = groups.get(key) || [];
+
+    groups.set(key, [...group, request]);
+    return groups;
+  }, new Map());
   let targetFare = 0;
   const targetRiders = [];
-  const arrangedRiders = routeReadyRequests.map((request, index) => {
-    const farePerKm = request.fare / Math.max(1, request.legDistance);
-    const arrangedRequest = {
-      ...request,
-      order: index + 1,
-      farePerKm,
-      coverageAfter: Math.min(targetMoney, targetFare + request.fare)
-    };
+  const arrangedRiders = [...groupedByHop.values()]
+    .map((group) => {
+      const sortedGroup = [...group].sort((a, b) => b.fare - a.fare);
+      const selectedGroup = sortedGroup.slice(0, safeVacantSeats);
+      const segmentTarget = getCaptainTargetMoney(selectedGroup[0]?.legDistance || 0);
+      const sharedFare = Math.max(1, Math.ceil(segmentTarget / Math.max(1, selectedGroup.length)));
 
-    if (targetFare < targetMoney) {
-      targetFare += request.fare;
-      targetRiders.push(arrangedRequest);
-    }
+      return selectedGroup.map((request) => ({
+        ...request,
+        segmentTarget,
+        originalFare: request.fare,
+        fare: sharedFare,
+        farePerKm: sharedFare / Math.max(1, request.legDistance),
+        sharedRiderCount: selectedGroup.length,
+        vacantShareLimit: safeVacantSeats
+      }));
+    })
+    .flat()
+    .sort((a, b) => (
+      a.pickupProgress - b.pickupProgress
+      || a.dropProgress - b.dropProgress
+      || b.fare - a.fare
+    ))
+    .map((request, index) => {
+      const arrangedRequest = {
+        ...request,
+        order: index + 1,
+        coverageAfter: Math.min(targetMoney, targetFare + request.fare)
+      };
 
-    return arrangedRequest;
-  });
+      if (targetFare < targetMoney) {
+        targetFare += request.fare;
+        targetRiders.push(arrangedRequest);
+      }
+
+      return arrangedRequest;
+    });
 
   return {
     arrangedRiders,
@@ -2572,15 +2601,16 @@ export default function App() {
     );
   };
 
-  const handleCaptainRideStatus = (requestId, status) => {
+  const handleCaptainRideStatus = (requestId, status, sharedFare) => {
     const request = captainRequests.find((item) => item.id === requestId);
     const isCompleted = status === 'ride-completed';
+    const completedFare = sharedFare ?? request?.fare ?? 0;
 
     if (isCompleted) {
       setCaptainSession((current) => ({
         ...current,
-        coveredMoney: Math.min(current.targetMoney, current.coveredMoney + (request?.fare ?? 0)),
-        active: current.coveredMoney + (request?.fare ?? 0) < current.targetMoney
+        coveredMoney: Math.min(current.targetMoney, current.coveredMoney + completedFare),
+        active: current.coveredMoney + completedFare < current.targetMoney
       }));
     }
 
@@ -2595,7 +2625,7 @@ export default function App() {
       },
       status === 'ride-started'
         ? 'Ride started by Captain. Rider alert sent.'
-        : `Ride completed. Rs ${request?.fare ?? 0} counted toward Captain session pocket target.`
+        : `Ride completed. Shared fare Rs ${completedFare} counted toward Captain session target.`
     );
   };
 
@@ -2885,7 +2915,8 @@ export default function App() {
     captainVisibleRequests,
     captainRouteSource,
     captainRouteDestination,
-    sessionTargetRemaining || captainRoute.targetMoney
+    sessionTargetRemaining || captainRoute.targetMoney,
+    captainRoute.vacantSeats
   );
   const targetFitRiders = arrangedRiderPlan.targetRiders;
   const targetFitAmount = arrangedRiderPlan.targetFare;
@@ -3929,14 +3960,14 @@ export default function App() {
                       {targetGap === 0
                         ? 'Captain charge-per-km target is already covered for this session.'
                         : targetCanBeCovered
-                        ? `${targetFitRiders.length} arranged rider${targetFitRiders.length === 1 ? '' : 's'} can cover the remaining Rs ${targetGap} from start to destination.`
-                        : `Arranged riders cover Rs ${targetFitAmount}. Need Rs ${Math.max(0, targetGap - targetFitAmount)} more on this Captain journey.`}
+                        ? `${targetFitRiders.length} arranged rider${targetFitRiders.length === 1 ? '' : 's'} share the fare and can cover the remaining Rs ${targetGap}.`
+                        : `Arranged riders share Rs ${targetFitAmount}. Need Rs ${Math.max(0, targetGap - targetFitAmount)} more on this Captain journey.`}
                     </strong>
                     <small>
                       Route chain: {targetGap === 0
                         ? 'Close this session or start a new route session.'
                         : targetFitRiders.length
-                        ? targetFitRiders.map((request) => `${request.pickup} to ${request.destination}: ${request.rider} Rs ${request.fare}`).join(' | ')
+                        ? targetFitRiders.map((request) => `${request.pickup} to ${request.destination}: ${request.rider} pays Rs ${request.fare}`).join(' | ')
                         : 'No suitable rider chain yet.'}
                     </small>
                   </div>
@@ -3950,7 +3981,7 @@ export default function App() {
                     <div>
                       <span>Expected total from arranged riders</span>
                       <strong>Rs {arrangedRiderPlan.totalFare}</strong>
-                      <small>Target riders selected until the session balance can be covered.</small>
+                      <small>Each segment target is split across available riders, limited by vacant seats.</small>
                     </div>
                   </div>
 
@@ -3959,7 +3990,7 @@ export default function App() {
                       <div className={targetFitRiders.some((targetRequest) => targetRequest.id === request.id) ? 'chain-step selected' : 'chain-step'} key={`chain-${request.id}`}>
                         <span>Step {request.order}</span>
                         <strong>{request.pickup} {'->'} {request.destination}</strong>
-                        <small>{request.rider} . Rs {request.fare} . {request.legDistance.toFixed(1)} km . Rs {request.farePerKm.toFixed(1)}/km</small>
+                        <small>{request.rider} pays Rs {request.fare} . {request.legDistance.toFixed(1)} km . Rs {request.farePerKm.toFixed(1)}/km . Shared by {request.sharedRiderCount}/{request.vacantShareLimit} vacant seats</small>
                       </div>
                     )) : (
                       <div className="chain-step">
@@ -4117,7 +4148,7 @@ export default function App() {
                           <button onClick={() => handleCaptainPresence(request.id, true)} disabled={!['accepted', 'location-alert'].includes(request.status)}>Rider Confirms Present</button>
                           <button onClick={() => handleCaptainPresence(request.id, false)} disabled={!['accepted', 'present-at-pickup'].includes(request.status)}>Rider Says Not At Location</button>
                           <button onClick={() => handleCaptainRideStatus(request.id, 'ride-started')} disabled={request.status !== 'present-at-pickup'}>Start Ride</button>
-                          <button onClick={() => handleCaptainRideStatus(request.id, 'ride-completed')} disabled={request.status !== 'ride-started'}>End Ride</button>
+                          <button onClick={() => handleCaptainRideStatus(request.id, 'ride-completed', request.fare)} disabled={request.status !== 'ride-started'}>End Ride</button>
                         </div>
                       </div>
                     )) : (
