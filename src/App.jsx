@@ -1297,6 +1297,11 @@ export default function App() {
     targetMoney: 176,
     status: 'Route not submitted'
   });
+  const [captainSession, setCaptainSession] = useState({
+    targetMoney: 176,
+    coveredMoney: 0,
+    active: true
+  });
   const [captainChatMessage, setCaptainChatMessage] = useState('I received your request. Please wait near the pickup pin.');
   const [captainPaymentStatus, setCaptainPaymentStatus] = useState('Payment receiving details are editable.');
   const [riderChatDrafts, setRiderChatDrafts] = useState({});
@@ -2257,6 +2262,11 @@ export default function App() {
       targetMoney: suggestedTarget,
       status: `Active route submitted. ${routeDistance.toFixed(1)} km path, Rs 10/km target, ${pricing.vacantSeats} shared rider${pricing.vacantSeats === 1 ? '' : 's'}, Rs ${Math.ceil(pricing.perRiderFare)} each.`
     }));
+    setCaptainSession((current) => (
+      current.active && current.coveredMoney < current.targetMoney
+        ? current
+        : { targetMoney: suggestedTarget, coveredMoney: 0, active: true }
+    ));
     const routeMessage = `Captain route ${routeSource} to ${routeDestination}: ${routeDistance.toFixed(1)} km x Rs 10 = Rs ${suggestedTarget}. Split across ${pricing.vacantSeats} rider${pricing.vacantSeats === 1 ? '' : 's'} at about Rs ${pricing.perRiderKm.toFixed(1)}/km, Rs ${Math.ceil(pricing.perRiderFare)} each. Matching riders will receive this route alert.`;
     setCaptainPanelMessage(routeMessage);
     setCaptainRouteAlert(routeMessage);
@@ -2435,10 +2445,10 @@ export default function App() {
       {
         status: 'accepted',
         presence: 'not-confirmed',
-        captainMessage: 'Captain accepted your request. Please be ready at the pickup pin.',
+        captainMessage: 'Captain accepted your request. Please confirm when Captain reaches your pickup location.',
         alertSentAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       },
-      `${captainProfile.name} accepted ${request?.rider ?? 'rider'} request. Rider alert sent for pickup verification.`
+      `${captainProfile.name} accepted ${request?.rider ?? 'rider'} request. Alert sent to rider for pickup presence confirmation.`
     );
   };
 
@@ -2455,25 +2465,75 @@ export default function App() {
     const request = captainRequests.find((item) => item.id === requestId);
     updateCaptainRequest(
       requestId,
-      { status: 'declined', presence: 'not-confirmed' },
-      `${captainProfile.name} declined ${request?.rider ?? 'rider'} request. RideRelay will move request to another Captain.`
+      {
+        status: 'declined',
+        presence: 'not-confirmed',
+        captainMessage: 'Captain declined this request. RideRelay will assign another Captain.',
+        alertSentAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      },
+      `${captainProfile.name} declined ${request?.rider ?? 'rider'} request. Rider alert sent and RideRelay will move request to another Captain.`
     );
   };
 
   const handleCaptainPresence = (requestId, isPresent) => {
     const request = captainRequests.find((item) => item.id === requestId);
+    const withinRange = (request?.distanceMeters ?? 9999) <= 500;
+    const captainMessage = isPresent
+      ? 'Rider confirmed Captain is present at pickup. Captain can start the ride.'
+      : withinRange
+        ? 'Captain is near your pickup location and will reach you shortly. Please wait at the pickup pin.'
+        : 'Captain is not at pickup location. RideRelay will help you choose another Captain.';
+
     updateCaptainRequest(
       requestId,
-      { presence: isPresent ? 'present' : 'absent', status: isPresent ? 'present-at-pickup' : 'location-alert' },
+      {
+        presence: isPresent ? 'present' : 'absent',
+        status: isPresent ? 'present-at-pickup' : withinRange ? 'accepted' : 'location-alert',
+        captainMessage,
+        alertSentAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      },
       isPresent
-        ? `GPS confirms Captain is present within ${request?.distanceMeters ?? 500}m at ${request?.pickup}.`
-        : `Captain not present at ${request?.pickup}. Alert sent to Rider and Captain.`
+        ? `Rider confirmed Captain is present at ${request?.pickup}. Start Ride is unlocked.`
+        : withinRange
+          ? `Rider marked Captain not at location, but GPS is within ${request?.distanceMeters ?? 500}m. Alert sent: Captain will reach shortly.`
+          : `Rider marked Captain not at location and GPS is outside 500m. Rider can choose another Captain.`
     );
   };
 
   const handleCaptainRideStatus = (requestId, status) => {
-    const label = status === 'ride-started' ? 'Ride started by Captain.' : 'Ride completed. Rider can pay and review.';
-    updateCaptainRequest(requestId, { status }, label);
+    const request = captainRequests.find((item) => item.id === requestId);
+    const isCompleted = status === 'ride-completed';
+
+    if (isCompleted) {
+      setCaptainSession((current) => ({
+        ...current,
+        coveredMoney: Math.min(current.targetMoney, current.coveredMoney + (request?.fare ?? 0)),
+        active: current.coveredMoney + (request?.fare ?? 0) < current.targetMoney
+      }));
+    }
+
+    updateCaptainRequest(
+      requestId,
+      {
+        status,
+        captainMessage: status === 'ride-started'
+          ? 'Ride started. Share live ride safety status until drop point.'
+          : 'Ride completed. Please complete payment and review.',
+        alertSentAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      },
+      status === 'ride-started'
+        ? 'Ride started by Captain. Rider alert sent.'
+        : `Ride completed. Rs ${request?.fare ?? 0} counted toward Captain session pocket target.`
+    );
+  };
+
+  const handleCloseCaptainSession = () => {
+    setCaptainSession({
+      targetMoney: captainRoute.targetMoney,
+      coveredMoney: 0,
+      active: true
+    });
+    setCaptainPanelMessage('Captain pocket session closed. New session started from the current route target.');
   };
 
   const scrollToSignup = () => {
@@ -2747,15 +2807,16 @@ export default function App() {
   const acceptedCaptainRequests = captainVisibleRequests.filter((request) => ['accepted', 'present-at-pickup', 'ride-started', 'ride-completed'].includes(request.status));
   const declinedCaptainRequests = captainVisibleRequests.filter((request) => request.status === 'declined');
   const completedCaptainRequests = captainVisibleRequests.filter((request) => request.status === 'ride-completed');
-  const completedRiderTotalAmount = completedCaptainRequests.reduce((total, request) => total + request.fare, 0);
-  const targetFitRiders = getTargetFitRiders(captainVisibleRequests, captainRoute.targetMoney);
+  const completedRiderTotalAmount = captainSession.coveredMoney;
+  const sessionTargetRemaining = Math.max(0, captainSession.targetMoney - captainSession.coveredMoney);
+  const targetFitRiders = getTargetFitRiders(captainVisibleRequests, sessionTargetRemaining || captainRoute.targetMoney);
   const targetFitAmount = targetFitRiders.reduce((total, request) => total + request.fare, 0);
-  const targetGap = Math.max(0, captainRoute.targetMoney - completedRiderTotalAmount);
-  const targetCanBeCovered = targetFitAmount >= captainRoute.targetMoney;
+  const targetGap = sessionTargetRemaining;
+  const targetCanBeCovered = targetFitAmount >= targetGap;
   const captainWholeRideCompleted = completedCaptainRequests.length > 0
-    && completedRiderTotalAmount >= captainRoute.targetMoney;
-  const pocketReducedAmount = Math.min(captainRoute.targetMoney, completedRiderTotalAmount);
-  const remainingTargetMoney = Math.max(0, captainRoute.targetMoney - pocketReducedAmount);
+    && sessionTargetRemaining === 0;
+  const pocketReducedAmount = Math.min(captainSession.targetMoney, completedRiderTotalAmount);
+  const remainingTargetMoney = sessionTargetRemaining;
   const riderHopPins = [...new Set(captainVisibleRequests.map((request) => `${request.pickup} -> ${request.destination}`))];
 
   return (
@@ -3767,6 +3828,10 @@ export default function App() {
                       <strong>{acceptedCaptainRequests.length} rider{acceptedCaptainRequests.length === 1 ? '' : 's'}</strong>
                     </div>
                     <div>
+                      <span>Session target</span>
+                      <strong>Rs {captainSession.targetMoney}</strong>
+                    </div>
+                    <div>
                       <span>Target covered</span>
                       <strong>Rs {pocketReducedAmount}</strong>
                     </div>
@@ -3783,15 +3848,31 @@ export default function App() {
                   <div className={`route-alert-box target-fit-box ${targetCanBeCovered ? 'target-ready' : 'target-gap'}`}>
                     <span>RideRelay pocket target arrangement</span>
                     <strong>
-                      {targetCanBeCovered
-                        ? `${targetFitRiders.length} high-pay rider${targetFitRiders.length === 1 ? '' : 's'} can cover Rs ${captainRoute.targetMoney}.`
-                        : `Current matching riders cover Rs ${targetFitAmount}. Need Rs ${captainRoute.targetMoney - targetFitAmount} more or more riders.`}
+                      {targetGap === 0
+                        ? 'Captain pocket target is already covered for this session.'
+                        : targetCanBeCovered
+                        ? `${targetFitRiders.length} rider${targetFitRiders.length === 1 ? '' : 's'} can cover the remaining Rs ${targetGap}.`
+                        : `Current matching riders cover Rs ${targetFitAmount}. Need Rs ${Math.max(0, targetGap - targetFitAmount)} more or more riders.`}
                     </strong>
                     <small>
-                      Suggested: {targetFitRiders.length
+                      Suggested: {targetGap === 0
+                        ? 'Close this session or start a new route session.'
+                        : targetFitRiders.length
                         ? targetFitRiders.map((request) => `${request.rider} Rs ${request.fare}`).join(', ')
                         : 'No suitable rider combination yet.'}
                     </small>
+                  </div>
+
+                  <div className="route-alert-box session-status-box">
+                    <span>Captain session status</span>
+                    <strong>
+                      {remainingTargetMoney === 0
+                        ? 'Pocket target reached. Captain can close this session.'
+                        : `Pocket session continues. Need Rs ${remainingTargetMoney} more before closing.`}
+                    </strong>
+                    <button className="mini-action" onClick={handleCloseCaptainSession} disabled={remainingTargetMoney > 0}>
+                      Close Session
+                    </button>
                   </div>
 
                   <div className="captain-route-preview rider-route-summary">
@@ -3927,8 +4008,8 @@ export default function App() {
                           <button onClick={() => handleCaptainAccept(request.id)} disabled={request.status !== 'pending'}>Accept Request</button>
                           <button onClick={() => handleCaptainDecline(request.id)} disabled={request.status !== 'pending'}>Decline</button>
                           <button onClick={() => handleCaptainSendAlert(request.id)}>Send Alert</button>
-                          <button onClick={() => handleCaptainPresence(request.id, true)} disabled={!['accepted', 'location-alert'].includes(request.status)}>Captain Present</button>
-                          <button onClick={() => handleCaptainPresence(request.id, false)} disabled={!['accepted', 'present-at-pickup'].includes(request.status)}>Not At Pickup</button>
+                          <button onClick={() => handleCaptainPresence(request.id, true)} disabled={!['accepted', 'location-alert'].includes(request.status)}>Rider Confirms Present</button>
+                          <button onClick={() => handleCaptainPresence(request.id, false)} disabled={!['accepted', 'present-at-pickup'].includes(request.status)}>Rider Says Not At Location</button>
                           <button onClick={() => handleCaptainRideStatus(request.id, 'ride-started')} disabled={request.status !== 'present-at-pickup'}>Start Ride</button>
                           <button onClick={() => handleCaptainRideStatus(request.id, 'ride-completed')} disabled={request.status !== 'ride-started'}>End Ride</button>
                         </div>
