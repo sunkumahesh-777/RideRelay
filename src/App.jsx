@@ -2262,12 +2262,12 @@ export default function App() {
       targetMoney: suggestedTarget,
       status: `Active route submitted. ${routeDistance.toFixed(1)} km path, Rs 10/km target, ${pricing.vacantSeats} shared rider${pricing.vacantSeats === 1 ? '' : 's'}, Rs ${Math.ceil(pricing.perRiderFare)} each.`
     }));
-    setCaptainSession((current) => (
-      current.active && current.coveredMoney < current.targetMoney
-        ? current
-        : { targetMoney: suggestedTarget, coveredMoney: 0, active: true }
-    ));
-    const routeMessage = `Captain route ${routeSource} to ${routeDestination}: ${routeDistance.toFixed(1)} km x Rs 10 = Rs ${suggestedTarget}. Split across ${pricing.vacantSeats} rider${pricing.vacantSeats === 1 ? '' : 's'} at about Rs ${pricing.perRiderKm.toFixed(1)}/km, Rs ${Math.ceil(pricing.perRiderFare)} each. Matching riders will receive this route alert.`;
+    setCaptainSession((current) => ({
+      targetMoney: Math.max(suggestedTarget, current.coveredMoney),
+      coveredMoney: current.coveredMoney,
+      active: true
+    }));
+    const routeMessage = `Captain route ${routeSource} to ${routeDestination}: charge per km is Rs 10. ${routeDistance.toFixed(1)} km x Rs 10 = Rs ${suggestedTarget}. Split across ${pricing.vacantSeats} rider${pricing.vacantSeats === 1 ? '' : 's'} at about Rs ${pricing.perRiderKm.toFixed(1)}/km, Rs ${Math.ceil(pricing.perRiderFare)} each. This pocket session remains active until Captain logout or session close.`;
     setCaptainPanelMessage(routeMessage);
     setCaptainRouteAlert(routeMessage);
     setCaptainRouteUpdated(true);
@@ -2411,6 +2411,11 @@ export default function App() {
 
   const handleLogout = () => {
     window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    setCaptainSession({
+      targetMoney: captainRoute.targetMoney,
+      coveredMoney: 0,
+      active: true
+    });
     setAppPage('auth');
     setAuthMode('login');
     setAuthStatus('Logged out. Choose Rider or Captain to continue.');
@@ -3828,7 +3833,7 @@ export default function App() {
                       <strong>{acceptedCaptainRequests.length} rider{acceptedCaptainRequests.length === 1 ? '' : 's'}</strong>
                     </div>
                     <div>
-                      <span>Session target</span>
+                      <span>Session target by charge/km</span>
                       <strong>Rs {captainSession.targetMoney}</strong>
                     </div>
                     <div>
@@ -3846,10 +3851,10 @@ export default function App() {
                   </div>
 
                   <div className={`route-alert-box target-fit-box ${targetCanBeCovered ? 'target-ready' : 'target-gap'}`}>
-                    <span>RideRelay pocket target arrangement</span>
+                    <span>RideRelay charge per km arrangement</span>
                     <strong>
                       {targetGap === 0
-                        ? 'Captain pocket target is already covered for this session.'
+                        ? 'Captain charge-per-km target is already covered for this session.'
                         : targetCanBeCovered
                         ? `${targetFitRiders.length} rider${targetFitRiders.length === 1 ? '' : 's'} can cover the remaining Rs ${targetGap}.`
                         : `Current matching riders cover Rs ${targetFitAmount}. Need Rs ${Math.max(0, targetGap - targetFitAmount)} more or more riders.`}
@@ -3867,8 +3872,8 @@ export default function App() {
                     <span>Captain session status</span>
                     <strong>
                       {remainingTargetMoney === 0
-                        ? 'Pocket target reached. Captain can close this session.'
-                        : `Pocket session continues. Need Rs ${remainingTargetMoney} more before closing.`}
+                        ? 'Charge-per-km target reached. Captain can close this session.'
+                        : `Charge-per-km pocket session continues across routes. Need Rs ${remainingTargetMoney} more before closing or logout.`}
                     </strong>
                     <button className="mini-action" onClick={handleCloseCaptainSession} disabled={remainingTargetMoney > 0}>
                       Close Session
@@ -3889,7 +3894,7 @@ export default function App() {
                       <strong>{captainRoute.vacantSeats} seat{Number(captainRoute.vacantSeats) === 1 ? '' : 's'} available</strong>
                     </div>
                     <div>
-                      <span>Pocket target</span>
+                      <span>Route charge target</span>
                       <strong>Rs {captainRoute.targetMoney}</strong>
                     </div>
                     <div>
