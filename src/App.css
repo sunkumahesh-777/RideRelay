@@ -1814,7 +1814,7 @@ button {
 
 .captain-route-preview {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 12px;
 }
 
@@ -2088,6 +2088,80 @@ button {
 
 .target-fit-box.target-gap strong {
   color: #fde68a;
+}
+
+.session-status-box {
+  display: grid;
+  gap: 10px;
+}
+
+.arranged-chain-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.arranged-chain-panel div,
+.chain-step {
+  border: 1px solid rgba(94, 234, 212, 0.2);
+  border-radius: 8px;
+  background: rgba(94, 234, 212, 0.07);
+  padding: 14px;
+}
+
+.arranged-chain-panel span,
+.chain-step span {
+  display: block;
+  color: #aab6ba;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.arranged-chain-panel strong,
+.chain-step strong {
+  display: block;
+  color: #ffffff;
+  line-height: 1.4;
+}
+
+.arranged-chain-panel small,
+.chain-step small {
+  display: block;
+  color: #cbd5e1;
+  line-height: 1.4;
+  margin-top: 6px;
+}
+
+.route-chain-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.chain-step.selected {
+  border-color: rgba(253, 230, 138, 0.36);
+  background: rgba(253, 230, 138, 0.1);
+}
+
+.chain-step.selected span {
+  color: #fde68a;
+}
+
+.mini-action {
+  width: fit-content;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  border-radius: 8px;
+  background: rgba(94, 234, 212, 0.12);
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 10px 16px;
+}
+
+.mini-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .compact-route-alert {
@@ -2640,6 +2714,10 @@ button {
   }
 
   .accepted-money-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .arranged-chain-panel {
     grid-template-columns: 1fr;
   }
 
