@@ -3,16 +3,6 @@ import { useEffect, useMemo, useState } from 'react';
 const assetPath = (fileName) => `${import.meta.env.BASE_URL}${fileName}`;
 const SESSION_STORAGE_KEY = 'riderelay-session';
 
-function getStoredSession() {
-  try {
-    const storedSession = window.localStorage.getItem(SESSION_STORAGE_KEY);
-
-    return storedSession ? JSON.parse(storedSession) : {};
-  } catch {
-    return {};
-  }
-}
-
 const liveDrivers = [
   {
     id: 1,
@@ -1248,24 +1238,16 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState('');
   const [bookedRideId, setBookedRideId] = useState(null);
   const [statusMessage, setStatusMessage] = useState('Set your route and find a budget ride nearby.');
-  const [activePanel, setActivePanel] = useState(() => {
-    const storedPanel = getStoredSession().activePanel;
-
-    return storedPanel || 'profile';
-  });
+  const [activePanel, setActivePanel] = useState('profile');
   const [paymentMethod, setPaymentMethod] = useState('UPI');
   const [walletBalance, setWalletBalance] = useState(260);
   const [paymentStatus, setPaymentStatus] = useState('Choose a ride to unlock payment.');
   const [selectedLocationId, setSelectedLocationId] = useState(1);
   const [locationSearch, setLocationSearch] = useState('');
   const [locationCategory, setLocationCategory] = useState('All');
-  const [appPage, setAppPage] = useState(() => {
-    const storedPage = getStoredSession().appPage;
-
-    return ['rider', 'captain'].includes(storedPage) ? storedPage : 'auth';
-  });
+  const [appPage, setAppPage] = useState('auth');
   const [authMode, setAuthMode] = useState('login');
-  const [signupRole, setSignupRole] = useState(() => getStoredSession().role || 'Rider');
+  const [signupRole, setSignupRole] = useState('Rider');
   const [signupMethod, setSignupMethod] = useState('Email');
   const [signupForm, setSignupForm] = useState(signupFields);
   const [authErrors, setAuthErrors] = useState({});
