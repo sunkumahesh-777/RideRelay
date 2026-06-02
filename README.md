@@ -54,3 +54,73 @@ npm run build
 ```
 
 The finished website files will be created in the `dist` folder.
+
+## Run the Backend API
+
+RideRelay now includes a starter backend API using Node.js and a local JSON database.
+
+Start the API server:
+
+```bash
+npm run api
+```
+
+The backend runs at:
+
+```text
+http://localhost:4000
+```
+
+Health check:
+
+```text
+GET http://localhost:4000/api/health
+```
+
+The local database is created automatically at `backend/data/riderelay-db.json`. This file is ignored by Git because it is local demo data.
+
+## Backend API Routes
+
+Auth:
+
+```text
+POST /api/auth/signup
+POST /api/auth/login
+```
+
+Profiles:
+
+```text
+GET /api/riders/:riderId/profile
+PATCH /api/riders/:riderId/profile
+GET /api/captains/:captainId/profile
+PATCH /api/captains/:captainId/profile
+PATCH /api/captains/:captainId/payment
+```
+
+Captain routes and rider requests:
+
+```text
+GET /api/captains/:captainId/routes
+POST /api/captains/:captainId/routes
+POST /api/rider-requests
+PATCH /api/captain/requests/:requestId
+PATCH /api/rides/:requestId/status
+```
+
+Payments and reviews:
+
+```text
+POST /api/payments
+POST /api/reviews
+```
+
+Demo data:
+
+```text
+GET /api/bootstrap
+```
+
+## Future Real Database Upgrade
+
+This first backend uses a local JSON database so development is easy. For production, replace it with PostgreSQL or MongoDB and store uploaded QR files in cloud storage such as S3, Firebase Storage, or Cloudinary.

@@ -1,0 +1,661 @@
+const http = require('http');
+const { URL } = require('url');
+const {
+  readDb,
+  writeDb,
+  createId,
+  now,
+  audit,
+  seedDb
+} = require('./db');
+
+const PORT = Number(process.env.PORT || 4000);
+const RATE_PER_KM = 10;
+
+seedDb();
+
+function sendJson(res, statusCode, data) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+  });
+  res.end(JSON.stringify(data, null, 2));
+}
+
+function parseBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 5_000_000) {
+        reject(new Error('Request body is too large'));
+      }
+    });
+
+    req.on('end', () => {
+      if (!body) {
+        resolve({});
+        return;
+      }
+
+      try {
+        resolve(JSON.parse(body));
+      } catch {
+        reject(new Error('Invalid JSON body'));
+      }
+    });
+  });
+}
+
+function cleanUser(user) {
+  if (!user) {
+    return null;
+  }
+
+  const { password, ...safeUser } = user;
+  return safeUser;
+}
+
+function normalize(value = '') {
+  return String(value).trim().toLowerCase();
+}
+
+function findById(items, id) {
+  return items.find((item) => item.id === id);
+}
+
+function calculateFare(distanceKm, vacantSeats) {
+  const safeDistance = Math.max(0, Number(distanceKm) || 0);
+  const safeSeats = Math.max(1, Number(vacantSeats) || 1);
+  return Math.max(10, Math.ceil((safeDistance * RATE_PER_KM) / safeSeats));
+}
+
+function normalizeRouteStop(value = '') {
+  return normalize(value).replace(/\s+/g, ' ');
+}
+
+function routeFitsRider(route, pickup, destination) {
+  const from = normalizeRouteStop(route.fromLocation);
+  const to = normalizeRouteStop(route.toLocation);
+  const riderPickup = normalizeRouteStop(pickup);
+  const riderDestination = normalizeRouteStop(destination);
+
+  return (
+    from === riderPickup
+    || to === riderDestination
+    || from.includes(riderPickup)
+    || to.includes(riderDestination)
+    || riderPickup.includes(from)
+    || riderDestination.includes(to)
+  );
+}
+
+function enrichRequest(db, request) {
+  const rider = findById(db.riders, request.riderId);
+  const captain = findById(db.captains, request.captainId);
+  const route = findById(db.captainRoutes, request.routeId);
+
+  return {
+    ...request,
+    riderName: rider?.fullName || 'Rider',
+    captainName: captain?.fullName || 'Captain',
+    route
+  };
+}
+
+function requireFields(body, fields) {
+  const missing = fields.filter((field) => !String(body[field] ?? '').trim());
+  return missing;
+}
+
+function getRoleProfile(db, user) {
+  if (user?.role === 'captain') {
+    return db.captains.find((captain) => captain.userId === user.id);
+  }
+
+  return db.riders.find((rider) => rider.userId === user?.id);
+}
+
+function routeMatches(path, pattern) {
+  const pathParts = path.split('/').filter(Boolean);
+  const patternParts = pattern.split('/').filter(Boolean);
+
+  if (pathParts.length !== patternParts.length) {
+    return null;
+  }
+
+  return patternParts.reduce((params, part, index) => {
+    if (params === null) {
+      return null;
+    }
+
+    if (part.startsWith(':')) {
+      return {
+        ...params,
+        [part.slice(1)]: pathParts[index]
+      };
+    }
+
+    return part === pathParts[index] ? params : null;
+  }, {});
+}
+
+async function handleRequest(req, res) {
+  if (req.method === 'OPTIONS') {
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const path = url.pathname;
+  const db = readDb();
+
+  try {
+    if (req.method === 'GET' && path === '/api/health') {
+      sendJson(res, 200, {
+        ok: true,
+        service: 'RideRelay backend',
+        time: now()
+      });
+      return;
+    }
+
+    if (req.method === 'GET' && path === '/api/bootstrap') {
+      sendJson(res, 200, {
+        riders: db.riders,
+        captains: db.captains,
+        captainRoutes: db.captainRoutes,
+        rideRequests: db.rideRequests
+      });
+      return;
+    }
+
+    if (req.method === 'GET' && path === '/api/captain-routes') {
+      const from = url.searchParams.get('from') || '';
+      const to = url.searchParams.get('to') || '';
+      const activeRoutes = db.captainRoutes
+        .filter((route) => route.status === 'active')
+        .filter((route) => !from || !to || routeFitsRider(route, from, to))
+        .map((route) => ({
+          ...route,
+          captain: findById(db.captains, route.captainId),
+          matchedFor: {
+            pickup: from,
+            destination: to
+          }
+        }));
+
+      sendJson(res, 200, activeRoutes);
+      return;
+    }
+
+    if (req.method === 'POST' && path === '/api/auth/signup') {
+      const body = await parseBody(req);
+      const missing = requireFields(body, ['role', 'fullName', 'email', 'phone', 'password']);
+
+      if (missing.length) {
+        sendJson(res, 400, { error: 'Missing required fields', missing });
+        return;
+      }
+
+      if (!['rider', 'captain'].includes(normalize(body.role))) {
+        sendJson(res, 400, { error: 'Role must be rider or captain' });
+        return;
+      }
+
+      if (db.users.some((user) => normalize(user.email) === normalize(body.email))) {
+        sendJson(res, 409, { error: 'Email already exists' });
+        return;
+      }
+
+      const user = {
+        id: createId('USR'),
+        role: normalize(body.role),
+        fullName: body.fullName,
+        email: body.email,
+        phone: body.phone,
+        password: body.password,
+        status: 'pending-verification',
+        createdAt: now()
+      };
+
+      db.users.push(user);
+
+      if (user.role === 'captain') {
+        db.captains.push({
+          id: createId('CAP'),
+          userId: user.id,
+          fullName: user.fullName,
+          gender: body.gender || '',
+          vehicleType: body.vehicleType || '',
+          vehicleNumber: body.vehicleNumber || '',
+          licenseNumber: body.licenseNumber || '',
+          verificationStatus: 'kyc-pending',
+          bank: {
+            accountHolder: user.fullName,
+            bankName: '',
+            accountNumber: '',
+            ifsc: '',
+            upiId: body.upiId || '',
+            qrFileName: '',
+            qrMimeType: '',
+            qrDataUrl: ''
+          },
+          dashboard: {
+            targetPeriod: 'day',
+            targetAmount: 600,
+            earnedAmount: 0,
+            completedRiders: 0,
+            totalRides: 0,
+            rating: 0
+          },
+          createdAt: now()
+        });
+      } else {
+        db.riders.push({
+          id: createId('RID'),
+          userId: user.id,
+          fullName: user.fullName,
+          homeStop: body.homeStop || '',
+          gender: body.gender || '',
+          emergencyContact: body.emergencyContact || '',
+          verificationStatus: 'phone-pending',
+          createdAt: now()
+        });
+      }
+
+      audit(db, 'auth.signup', { userId: user.id, role: user.role });
+      writeDb(db);
+      sendJson(res, 201, {
+        user: cleanUser(user),
+        profile: getRoleProfile(db, user)
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && path === '/api/auth/login') {
+      const body = await parseBody(req);
+      const user = db.users.find((item) => (
+        normalize(item.email) === normalize(body.email)
+        && item.password === body.password
+      ));
+
+      if (!user) {
+        sendJson(res, 401, { error: 'Invalid email or password' });
+        return;
+      }
+
+      audit(db, 'auth.login', { userId: user.id });
+      writeDb(db);
+      sendJson(res, 200, {
+        token: `demo-token-${user.id}`,
+        user: cleanUser(user),
+        profile: getRoleProfile(db, user)
+      });
+      return;
+    }
+
+    const captainProfileParams = routeMatches(path, '/api/captains/:captainId/profile');
+
+    if (captainProfileParams && req.method === 'GET') {
+      const captain = findById(db.captains, captainProfileParams.captainId);
+      sendJson(res, captain ? 200 : 404, captain || { error: 'Captain not found' });
+      return;
+    }
+
+    if (captainProfileParams && req.method === 'PATCH') {
+      const body = await parseBody(req);
+      const captain = findById(db.captains, captainProfileParams.captainId);
+
+      if (!captain) {
+        sendJson(res, 404, { error: 'Captain not found' });
+        return;
+      }
+
+      Object.assign(captain, {
+        fullName: body.fullName ?? captain.fullName,
+        gender: body.gender ?? captain.gender,
+        vehicleType: body.vehicleType ?? captain.vehicleType,
+        vehicleNumber: body.vehicleNumber ?? captain.vehicleNumber,
+        licenseNumber: body.licenseNumber ?? captain.licenseNumber
+      });
+      audit(db, 'captain.profile.updated', { captainId: captain.id });
+      writeDb(db);
+      sendJson(res, 200, captain);
+      return;
+    }
+
+    const riderProfileParams = routeMatches(path, '/api/riders/:riderId/profile');
+
+    if (riderProfileParams && req.method === 'GET') {
+      const rider = findById(db.riders, riderProfileParams.riderId);
+      sendJson(res, rider ? 200 : 404, rider || { error: 'Rider not found' });
+      return;
+    }
+
+    if (riderProfileParams && req.method === 'PATCH') {
+      const body = await parseBody(req);
+      const rider = findById(db.riders, riderProfileParams.riderId);
+
+      if (!rider) {
+        sendJson(res, 404, { error: 'Rider not found' });
+        return;
+      }
+
+      Object.assign(rider, {
+        fullName: body.fullName ?? rider.fullName,
+        homeStop: body.homeStop ?? rider.homeStop,
+        gender: body.gender ?? rider.gender,
+        emergencyContact: body.emergencyContact ?? rider.emergencyContact
+      });
+      audit(db, 'rider.profile.updated', { riderId: rider.id });
+      writeDb(db);
+      sendJson(res, 200, rider);
+      return;
+    }
+
+    const captainPaymentParams = routeMatches(path, '/api/captains/:captainId/payment');
+
+    if (captainPaymentParams && req.method === 'PATCH') {
+      const body = await parseBody(req);
+      const captain = findById(db.captains, captainPaymentParams.captainId);
+
+      if (!captain) {
+        sendJson(res, 404, { error: 'Captain not found' });
+        return;
+      }
+
+      captain.bank = {
+        ...captain.bank,
+        accountHolder: body.accountHolder ?? captain.bank.accountHolder,
+        bankName: body.bankName ?? captain.bank.bankName,
+        accountNumber: body.accountNumber ?? captain.bank.accountNumber,
+        ifsc: body.ifsc ?? captain.bank.ifsc,
+        upiId: body.upiId ?? captain.bank.upiId,
+        qrFileName: body.qrFileName ?? captain.bank.qrFileName,
+        qrMimeType: body.qrMimeType ?? captain.bank.qrMimeType,
+        qrDataUrl: body.qrDataUrl ?? captain.bank.qrDataUrl
+      };
+      audit(db, 'captain.payment.updated', { captainId: captain.id, qrFileName: captain.bank.qrFileName });
+      writeDb(db);
+      sendJson(res, 200, captain.bank);
+      return;
+    }
+
+    const captainRouteParams = routeMatches(path, '/api/captains/:captainId/routes');
+
+    if (captainRouteParams && req.method === 'GET') {
+      sendJson(res, 200, db.captainRoutes.filter((route) => route.captainId === captainRouteParams.captainId));
+      return;
+    }
+
+    if (captainRouteParams && req.method === 'POST') {
+      const body = await parseBody(req);
+      const captain = findById(db.captains, captainRouteParams.captainId);
+      const missing = requireFields(body, ['fromLocation', 'toLocation', 'vacantSeats', 'distanceKm']);
+
+      if (!captain) {
+        sendJson(res, 404, { error: 'Captain not found' });
+        return;
+      }
+
+      if (missing.length) {
+        sendJson(res, 400, { error: 'Missing required fields', missing });
+        return;
+      }
+
+      db.captainRoutes
+        .filter((route) => route.captainId === captain.id && route.status === 'active')
+        .forEach((route) => {
+          route.status = 'closed';
+        });
+
+      const route = {
+        id: createId('ROUTE'),
+        captainId: captain.id,
+        fromLocation: body.fromLocation,
+        toLocation: body.toLocation,
+        vacantSeats: Math.max(1, Number(body.vacantSeats) || 1),
+        distanceKm: Number(body.distanceKm) || 0,
+        status: 'active',
+        currentPin: body.fromLocation,
+        createdAt: now()
+      };
+
+      db.captainRoutes.push(route);
+      audit(db, 'captain.route.created', { captainId: captain.id, routeId: route.id });
+      writeDb(db);
+      sendJson(res, 201, route);
+      return;
+    }
+
+    const captainDashboardParams = routeMatches(path, '/api/captains/:captainId/dashboard');
+
+    if (captainDashboardParams && req.method === 'PATCH') {
+      const body = await parseBody(req);
+      const captain = findById(db.captains, captainDashboardParams.captainId);
+
+      if (!captain) {
+        sendJson(res, 404, { error: 'Captain not found' });
+        return;
+      }
+
+      captain.dashboard = {
+        ...captain.dashboard,
+        targetPeriod: body.targetPeriod ?? captain.dashboard.targetPeriod,
+        targetAmount: Number(body.targetAmount ?? captain.dashboard.targetAmount) || 0
+      };
+      audit(db, 'captain.dashboard.updated', { captainId: captain.id });
+      writeDb(db);
+      sendJson(res, 200, captain.dashboard);
+      return;
+    }
+
+    const captainRequestsParams = routeMatches(path, '/api/captains/:captainId/requests');
+
+    if (captainRequestsParams && req.method === 'GET') {
+      sendJson(res, 200, db.rideRequests
+        .filter((request) => request.captainId === captainRequestsParams.captainId)
+        .map((request) => enrichRequest(db, request)));
+      return;
+    }
+
+    const riderRequestsParams = routeMatches(path, '/api/riders/:riderId/requests');
+
+    if (riderRequestsParams && req.method === 'GET') {
+      sendJson(res, 200, db.rideRequests
+        .filter((request) => request.riderId === riderRequestsParams.riderId)
+        .map((request) => enrichRequest(db, request)));
+      return;
+    }
+
+    if (req.method === 'POST' && path === '/api/rider-requests') {
+      const body = await parseBody(req);
+      const missing = requireFields(body, ['riderId', 'captainId', 'routeId', 'pickup', 'destination', 'distanceKm']);
+
+      if (missing.length) {
+        sendJson(res, 400, { error: 'Missing required fields', missing });
+        return;
+      }
+
+      const route = findById(db.captainRoutes, body.routeId);
+
+      if (!route || route.status !== 'active') {
+        sendJson(res, 404, { error: 'Active captain route not found' });
+        return;
+      }
+
+      const request = {
+        id: createId('REQ'),
+        riderId: body.riderId,
+        captainId: body.captainId,
+        routeId: body.routeId,
+        pickup: body.pickup,
+        destination: body.destination,
+        hopPickup: body.hopPickup || body.pickup,
+        hopDestination: body.hopDestination || body.destination,
+        fare: calculateFare(body.distanceKm, route.vacantSeats),
+        distanceKm: Number(body.distanceKm) || 0,
+        status: 'pending',
+        captainMessage: '',
+        createdAt: now()
+      };
+
+      db.rideRequests.push(request);
+      audit(db, 'ride.request.created', { requestId: request.id });
+      writeDb(db);
+      sendJson(res, 201, request);
+      return;
+    }
+
+    const requestDecisionParams = routeMatches(path, '/api/captain/requests/:requestId');
+
+    if (requestDecisionParams && req.method === 'PATCH') {
+      const body = await parseBody(req);
+      const request = findById(db.rideRequests, requestDecisionParams.requestId);
+
+      if (!request) {
+        sendJson(res, 404, { error: 'Ride request not found' });
+        return;
+      }
+
+      const allowedStatuses = ['accepted', 'declined', 'location-alert'];
+      if (!allowedStatuses.includes(body.status)) {
+        sendJson(res, 400, { error: `Status must be one of ${allowedStatuses.join(', ')}` });
+        return;
+      }
+
+      request.status = body.status;
+      request.captainMessage = body.captainMessage ?? request.captainMessage;
+      request.updatedAt = now();
+      audit(db, 'ride.request.decision', { requestId: request.id, status: request.status });
+      writeDb(db);
+      sendJson(res, 200, request);
+      return;
+    }
+
+    const rideStatusParams = routeMatches(path, '/api/rides/:requestId/status');
+
+    if (rideStatusParams && req.method === 'PATCH') {
+      const body = await parseBody(req);
+      const request = findById(db.rideRequests, rideStatusParams.requestId);
+
+      if (!request) {
+        sendJson(res, 404, { error: 'Ride request not found' });
+        return;
+      }
+
+      const allowedStatuses = ['present-at-pickup', 'ride-started', 'ride-completed'];
+      if (!allowedStatuses.includes(body.status)) {
+        sendJson(res, 400, { error: `Status must be one of ${allowedStatuses.join(', ')}` });
+        return;
+      }
+
+      request.status = body.status;
+      request.updatedAt = now();
+
+      if (body.status === 'ride-completed') {
+        const route = findById(db.captainRoutes, request.routeId);
+        const captain = findById(db.captains, request.captainId);
+
+        if (route) {
+          route.currentPin = request.hopDestination || request.destination;
+        }
+
+        if (captain) {
+          captain.dashboard.totalRides += 1;
+          captain.dashboard.completedRiders += 1;
+        }
+      }
+
+      audit(db, 'ride.status.updated', { requestId: request.id, status: request.status });
+      writeDb(db);
+      sendJson(res, 200, request);
+      return;
+    }
+
+    if (req.method === 'POST' && path === '/api/payments') {
+      const body = await parseBody(req);
+      const missing = requireFields(body, ['requestId', 'amount', 'method']);
+
+      if (missing.length) {
+        sendJson(res, 400, { error: 'Missing required fields', missing });
+        return;
+      }
+
+      const request = findById(db.rideRequests, body.requestId);
+      if (!request) {
+        sendJson(res, 404, { error: 'Ride request not found' });
+        return;
+      }
+
+      const payment = {
+        id: createId('PAY'),
+        requestId: request.id,
+        riderId: request.riderId,
+        captainId: request.captainId,
+        amount: Number(body.amount) || request.fare,
+        method: body.method,
+        status: 'paid',
+        createdAt: now()
+      };
+
+      db.payments.push(payment);
+      const captain = findById(db.captains, request.captainId);
+      if (captain) {
+        captain.dashboard.earnedAmount += payment.amount;
+      }
+      audit(db, 'payment.created', { paymentId: payment.id, requestId: request.id });
+      writeDb(db);
+      sendJson(res, 201, payment);
+      return;
+    }
+
+    if (req.method === 'POST' && path === '/api/reviews') {
+      const body = await parseBody(req);
+      const missing = requireFields(body, ['requestId', 'riderId', 'captainId', 'rating']);
+
+      if (missing.length) {
+        sendJson(res, 400, { error: 'Missing required fields', missing });
+        return;
+      }
+
+      const review = {
+        id: createId('REV'),
+        requestId: body.requestId,
+        riderId: body.riderId,
+        captainId: body.captainId,
+        rating: Number(body.rating) || 0,
+        mood: body.mood || 'Moderate',
+        comment: body.comment || '',
+        createdAt: now()
+      };
+
+      db.reviews.push(review);
+      const captainReviews = db.reviews.filter((item) => item.captainId === body.captainId);
+      const captain = findById(db.captains, body.captainId);
+
+      if (captain && captainReviews.length) {
+        captain.dashboard.rating = Number((
+          captainReviews.reduce((total, item) => total + item.rating, 0) / captainReviews.length
+        ).toFixed(1));
+      }
+
+      audit(db, 'review.created', { reviewId: review.id });
+      writeDb(db);
+      sendJson(res, 201, review);
+      return;
+    }
+
+    sendJson(res, 404, { error: 'API route not found', path });
+  } catch (error) {
+    sendJson(res, 500, { error: error.message });
+  }
+}
+
+http.createServer(handleRequest).listen(PORT, () => {
+  console.log(`RideRelay backend running at http://localhost:${PORT}`);
+});

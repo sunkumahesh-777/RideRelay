@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 const assetPath = (fileName) => `${import.meta.env.BASE_URL}${fileName}`;
 const SESSION_STORAGE_KEY = 'riderelay-session';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 const ACTIVE_CAPTAIN_REQUEST_STATUSES = ['accepted', 'present-at-pickup', 'ride-started'];
 const CAPTAIN_ROUTE_RATE_PER_KM = 10;
 
@@ -760,12 +761,33 @@ const initialCaptainRequests = [
 
 const apiPreview = {
   signup: 'POST /api/auth/signup',
+  login: 'POST /api/auth/login',
   gmail: 'POST /api/auth/google',
   captainRequests: 'GET /api/captain/requests',
   captainDecision: 'PATCH /api/captain/requests/:id',
   presence: 'POST /api/captain/presence',
   rideStatus: 'PATCH /api/rides/:id/status'
 };
+
+async function apiRequest(path, options = {}) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    const error = new Error(payload.error || `API request failed with ${response.status}`);
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+
+  return payload;
+}
 
 function getCaptainTargetMoney(distanceKm) {
   return Math.max(10, Math.round(distanceKm * CAPTAIN_ROUTE_RATE_PER_KM));
@@ -1395,6 +1417,8 @@ export default function App() {
   const [authErrors, setAuthErrors] = useState({});
   const [signupRecords, setSignupRecords] = useState([]);
   const [authStatus, setAuthStatus] = useState('Create a Rider or Captain account. Backend API payload is prepared after submit.');
+  const [apiSession, setApiSession] = useState(null);
+  const [backendStatus, setBackendStatus] = useState('Backend API ready when server is running.');
   const [captainProfile, setCaptainProfile] = useState({
     name: 'Rahul Captain',
     phone: '+91 90000 12345',
@@ -1435,6 +1459,8 @@ export default function App() {
   const [paidCaptainRequestIds, setPaidCaptainRequestIds] = useState([]);
   const [captainRouteAlert, setCaptainRouteAlert] = useState('Submit Captain route to send route alert to matching rider dialogue boxes.');
   const [captainRouteUpdated, setCaptainRouteUpdated] = useState(false);
+  const [backendRouteMatches, setBackendRouteMatches] = useState([]);
+  const [backendRideRequestIds, setBackendRideRequestIds] = useState({});
   const [isQrPreviewOpen, setIsQrPreviewOpen] = useState(false);
   const [isProfileEditing, setIsProfileEditing] = useState(false);
   const [profileStatus, setProfileStatus] = useState('Profile details are locked. Click Edit to update.');
@@ -1452,6 +1478,54 @@ export default function App() {
     emergency: '+91 91234 56780'
   });
 
+  const applyBackendSession = (payload, role) => {
+    const nextRole = role || (payload.user?.role === 'captain' ? 'Captain' : 'Rider');
+    const profile = payload.profile || {};
+    const user = payload.user || {};
+
+    setApiSession({
+      token: payload.token || '',
+      user,
+      profile
+    });
+
+    if (nextRole === 'Captain') {
+      const bank = profile.bank || {};
+
+      setCaptainProfile((current) => ({
+        ...current,
+        name: profile.fullName || user.fullName || current.name,
+        phone: user.phone || current.phone,
+        email: user.email || current.email,
+        vehicleType: profile.vehicleType || current.vehicleType,
+        vehicleNumber: profile.vehicleNumber || current.vehicleNumber,
+        licenseNumber: profile.licenseNumber || current.licenseNumber,
+        verification: profile.verificationStatus || current.verification,
+        gender: profile.gender || current.gender,
+        upiId: bank.upiId || current.upiId,
+        bankName: bank.bankName || current.bankName,
+        accountNumber: bank.accountNumber || current.accountNumber,
+        ifsc: bank.ifsc || current.ifsc,
+        accountHolder: bank.accountHolder || profile.fullName || current.accountHolder,
+        accountLast4: (bank.accountNumber || '').replace(/\D/g, '').slice(-4) || current.accountLast4,
+        qrFileName: bank.qrFileName || current.qrFileName,
+        qrPreviewUrl: bank.qrDataUrl || current.qrPreviewUrl,
+        qrFileType: bank.qrMimeType?.includes('pdf') ? 'pdf' : (bank.qrDataUrl ? 'image' : current.qrFileType)
+      }));
+    } else {
+      setRiderProfile((current) => ({
+        ...current,
+        name: profile.fullName || user.fullName || current.name,
+        phone: user.phone || current.phone,
+        email: user.email || current.email,
+        home: profile.homeStop || current.home,
+        emergency: profile.emergencyContact || current.emergency
+      }));
+    }
+
+    setBackendStatus(`Backend connected as ${nextRole}.`);
+  };
+
   useEffect(() => {
     const updateTime = () => {
       setCurrentTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
@@ -1463,6 +1537,27 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const savedSession = window.localStorage.getItem(SESSION_STORAGE_KEY);
+
+    if (!savedSession) {
+      return;
+    }
+
+    try {
+      const parsedSession = JSON.parse(savedSession);
+
+      if (parsedSession.appPage === 'captain' || parsedSession.appPage === 'rider') {
+        setSignupRole(parsedSession.role || (parsedSession.appPage === 'captain' ? 'Captain' : 'Rider'));
+        setActivePanel(parsedSession.activePanel || (parsedSession.appPage === 'captain' ? 'captain-dashboard' : 'profile'));
+        setAppPage(parsedSession.appPage);
+        setAuthStatus('Previous session restored. Login again only after logout.');
+      }
+    } catch {
+      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    }
+  }, []);
+
+  useEffect(() => {
     if (appPage === 'auth') {
       return;
     }
@@ -1470,9 +1565,10 @@ export default function App() {
     window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
       appPage,
       activePanel,
-      role: appPage === 'captain' ? 'Captain' : 'Rider'
+      role: appPage === 'captain' ? 'Captain' : 'Rider',
+      backendUserId: apiSession?.user?.id || ''
     }));
-  }, [appPage, activePanel]);
+  }, [appPage, activePanel, apiSession]);
 
   const availableStops = useMemo(() => {
     return [...new Set([
@@ -1554,7 +1650,7 @@ export default function App() {
     setValidationInfo(null);
     setStatusMessage('Checking live routes near your pickup point...');
 
-    setTimeout(() => {
+    setTimeout(async () => {
       const routePickup = resolveLocationArea(pickup);
       const routeDestination = resolveLocationArea(destination);
       const eligibleRides = liveDrivers
@@ -1607,6 +1703,16 @@ export default function App() {
       setConnectedPlan(plan);
       setRouteOptions(options);
       setAlternateMatches(plan.length ? [] : alternates);
+      try {
+        const backendRoutes = await apiRequest(`/api/captain-routes?from=${encodeURIComponent(routePickup)}&to=${encodeURIComponent(routeDestination)}`);
+        setBackendRouteMatches(backendRoutes);
+        setBackendStatus(backendRoutes.length
+          ? `${backendRoutes.length} backend Captain route${backendRoutes.length === 1 ? '' : 's'} available for this rider search.`
+          : 'No backend Captain route found for this rider search yet.');
+      } catch (error) {
+        setBackendRouteMatches([]);
+        setBackendStatus(`Backend route search not available: ${error.message}`);
+      }
       setValidationInfo({
         distanceKm: tripDistance,
         routeDistanceKm: selectedRouteDistance,
@@ -1646,7 +1752,7 @@ export default function App() {
     setStatusMessage(`${location.name} added as destination.`);
   };
 
-  const handleJoinRide = (ride) => {
+  const handleJoinRide = async (ride) => {
     const leg = {
       ride,
       from: ride.pickup,
@@ -1665,6 +1771,15 @@ export default function App() {
     setRideStage('idle');
     setStatusMessage(`Choose one rider for ${ride.pickup} to ${ride.destination}.`);
     setPaymentStatus(`Select a Captain to prepare payment.`);
+
+    await createBackendRideRequest({
+      requestKey: `direct-${ride.id}`,
+      from: ride.pickup,
+      to: ride.destination,
+      hopPickup: ride.pickup,
+      hopDestination: ride.destination,
+      distanceKm: getLegDistanceKm(ride.pickup, ride.destination)
+    });
   };
 
   const getPrioritizedLegRiders = (leg, step) => {
@@ -1741,7 +1856,7 @@ export default function App() {
       || (selectedPickupRider && selectedPickupRiderId !== rider.id && !isCaptainSelectionMutable());
   };
 
-  const handlePickupRiderSelect = (rider) => {
+  const handlePickupRiderSelect = async (rider) => {
     if (selectedPickupRider && selectedPickupRiderId !== rider.id && !isCaptainSelectionMutable()) {
       setStatusMessage('Captain already selected. You can choose another only if this Captain declines.');
       return;
@@ -1759,6 +1874,15 @@ export default function App() {
     setRideStage('waiting-driver-start');
     setStatusMessage(`${rider.name} selected at ${rider.pickup}. Waiting for Captain to start the ride.`);
     setPaymentStatus(`Rs ${rider.fare} ready to pay by ${paymentMethod}.`);
+
+    await createBackendRideRequest({
+      requestKey: selectedLeg ? `leg-${selectedLeg.step}-${rider.id}` : `direct-captain-${rider.id}`,
+      from: selectedLeg?.from || rider.pickup,
+      to: selectedLeg?.to || rider.destination,
+      hopPickup: selectedLeg?.from || rider.pickup,
+      hopDestination: selectedLeg?.to || rider.destination,
+      distanceKm: getLegDistanceKm(selectedLeg?.from || rider.pickup, selectedLeg?.to || rider.destination)
+    });
   };
 
   const handleCaptainRefuse = () => {
@@ -1793,6 +1917,97 @@ export default function App() {
     const captains = getLegRiders(leg);
 
     return captains.find((captain) => !attempted.has(captain.id)) ?? captains[0];
+  };
+
+  const getBackendRiderId = async () => {
+    if (apiSession?.user?.role === 'rider' && apiSession.profile?.id) {
+      return apiSession.profile.id;
+    }
+
+    const bootstrap = await apiRequest('/api/bootstrap');
+    return bootstrap.riders?.[0]?.id;
+  };
+
+  const getBackendRouteForRide = async (from, to) => {
+    const routeMatches = await apiRequest(`/api/captain-routes?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+    const activeRoute = routeMatches[0];
+
+    if (activeRoute) {
+      return activeRoute;
+    }
+
+    const bootstrap = await apiRequest('/api/bootstrap');
+    return bootstrap.captainRoutes?.find((route) => route.status === 'active') ?? bootstrap.captainRoutes?.[0];
+  };
+
+  const createBackendRideRequest = async ({ requestKey, from, to, hopPickup, hopDestination, distanceKm }) => {
+    try {
+      const riderId = await getBackendRiderId();
+      const route = await getBackendRouteForRide(from, to);
+
+      if (!riderId || !route?.captainId || !route?.id) {
+        setBackendStatus('Backend request could not be created because Rider or Captain route record is missing.');
+        return null;
+      }
+
+      const request = await apiRequest('/api/rider-requests', {
+        method: 'POST',
+        body: JSON.stringify({
+          riderId,
+          captainId: route.captainId,
+          routeId: route.id,
+          pickup: from,
+          destination: to,
+          hopPickup: hopPickup || from,
+          hopDestination: hopDestination || to,
+          distanceKm
+        })
+      });
+
+      setBackendRideRequestIds((current) => ({
+        ...current,
+        [requestKey]: request.id
+      }));
+      setBackendStatus(`Rider request saved in backend: ${request.id}.`);
+      return request;
+    } catch (error) {
+      setBackendStatus(`Backend rider request not saved: ${error.message}`);
+      return null;
+    }
+  };
+
+  const syncCaptainRequestsFromBackend = async () => {
+    const captainId = apiSession?.user?.role === 'captain' ? apiSession.profile?.id : '';
+
+    if (!captainId) {
+      return;
+    }
+
+    try {
+      const backendRequests = await apiRequest(`/api/captains/${captainId}/requests`);
+      const mappedRequests = backendRequests.map((request) => ({
+        id: request.id,
+        rider: request.riderName,
+        pickup: request.hopPickup || request.pickup,
+        destination: request.hopDestination || request.destination,
+        fare: request.fare,
+        status: request.status,
+        distanceMeters: request.distanceMeters || 420,
+        eta: request.eta || 5,
+        presence: request.status === 'present-at-pickup' ? 'present' : 'not-confirmed',
+        captainMessage: request.captainMessage || '',
+        alertSentAt: request.updatedAt ? new Date(request.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
+      }));
+
+      setCaptainRequests((current) => {
+        const backendIds = new Set(mappedRequests.map((request) => request.id));
+        const localOnly = current.filter((request) => !backendIds.has(request.id));
+        return [...mappedRequests, ...localOnly];
+      });
+      setBackendStatus(`Synced ${mappedRequests.length} Captain request${mappedRequests.length === 1 ? '' : 's'} from backend.`);
+    } catch (error) {
+      setBackendStatus(`Captain request sync failed: ${error.message}`);
+    }
   };
 
   const getCaptainDistanceStatus = (distanceMeters = 0) => {
@@ -2105,11 +2320,14 @@ export default function App() {
     setActivePanel('payments');
   };
 
-  const handlePaySelectedDriver = () => {
+  const handlePaySelectedDriver = async () => {
     if (!selectedPickupRider) {
       setPaymentStatus('Select a Captain before payment.');
       return;
     }
+
+    const requestKey = selectedLeg ? `leg-${selectedLeg.step}-${selectedPickupRider.id}` : `direct-captain-${selectedPickupRider.id}`;
+    const backendRequestId = backendRideRequestIds[requestKey] || backendRideRequestIds[`direct-${bookedRideId}`];
 
     setRideStage('paid');
     if (selectedLeg) {
@@ -2119,15 +2337,58 @@ export default function App() {
       setJourneyComplete(true);
     }
     setPaymentStatus(`Payment successful. ${selectedPickupRider.name} received Rs ${selectedPickupRider.fare}.`);
+
+    if (backendRequestId) {
+      try {
+        await apiRequest('/api/payments', {
+          method: 'POST',
+          body: JSON.stringify({
+            requestId: backendRequestId,
+            amount: selectedPickupRider.fare,
+            method: paymentMethod
+          })
+        });
+        setBackendStatus('Rider payment saved in backend.');
+      } catch (error) {
+        setBackendStatus(`Backend payment save skipped: ${error.message}`);
+      }
+    }
   };
 
-  const handleSubmitDriverReview = () => {
+  const handleSubmitDriverReview = async () => {
     if (!selectedPickupRider) {
       return;
     }
 
     setSubmittedDriverReviews((ids) => [...new Set([...ids, selectedPickupRider.id])]);
     setStatusMessage(`Captain feedback submitted for ${selectedPickupRider.name}.`);
+
+    const requestKey = selectedLeg ? `leg-${selectedLeg.step}-${selectedPickupRider.id}` : `direct-captain-${selectedPickupRider.id}`;
+    const backendRequestId = backendRideRequestIds[requestKey] || backendRideRequestIds[`direct-${bookedRideId}`];
+
+    if (backendRequestId) {
+      try {
+        const bootstrap = await apiRequest('/api/bootstrap');
+        const request = bootstrap.rideRequests?.find((item) => item.id === backendRequestId);
+
+        if (request) {
+          await apiRequest('/api/reviews', {
+            method: 'POST',
+            body: JSON.stringify({
+              requestId: backendRequestId,
+              riderId: request.riderId,
+              captainId: request.captainId,
+              rating: 5,
+              mood: 'Happy',
+              comment: feedback.driver || 'Ride completed safely.'
+            })
+          });
+          setBackendStatus('Rider review saved in backend.');
+        }
+      } catch (error) {
+        setBackendStatus(`Backend review save skipped: ${error.message}`);
+      }
+    }
   };
 
   const handleSubmitWebsiteReview = () => {
@@ -2371,7 +2632,7 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  const handleCaptainPaymentSubmit = (event) => {
+  const handleCaptainPaymentSubmit = async (event) => {
     event.preventDefault();
 
     if (!captainProfile.upiId.trim() && (!captainProfile.accountNumber.trim() || !captainProfile.ifsc.trim())) {
@@ -2379,10 +2640,42 @@ export default function App() {
       return;
     }
 
-    setCaptainPaymentStatus(`Payment receiving details saved. ${captainProfile.qrPreviewUrl ? 'QR record is available for rider scanning/viewing.' : 'No QR file is uploaded yet.'}`);
+    const captainId = apiSession?.user?.role === 'captain' ? apiSession.profile?.id : '';
+
+    if (captainId) {
+      try {
+        const savedBank = await apiRequest(`/api/captains/${captainId}/payment`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            accountHolder: captainProfile.accountHolder,
+            bankName: captainProfile.bankName,
+            accountNumber: captainProfile.accountNumber,
+            ifsc: captainProfile.ifsc,
+            upiId: captainProfile.upiId,
+            qrFileName: captainProfile.qrFileName,
+            qrMimeType: captainProfile.qrFileType === 'pdf' ? 'application/pdf' : (captainProfile.qrPreviewUrl ? 'image/*' : ''),
+            qrDataUrl: captainProfile.qrPreviewUrl
+          })
+        });
+
+        setApiSession((current) => current ? ({
+          ...current,
+          profile: {
+            ...current.profile,
+            bank: savedBank
+          }
+        }) : current);
+        setCaptainPaymentStatus(`Payment receiving details saved in backend. ${captainProfile.qrPreviewUrl ? 'QR record is available for rider scanning/viewing.' : 'No QR file is uploaded yet.'}`);
+        return;
+      } catch (error) {
+        setCaptainPaymentStatus(`Saved on page, but backend save failed: ${error.message}`);
+      }
+    }
+
+    setCaptainPaymentStatus(`Payment receiving details saved on this page. ${captainProfile.qrPreviewUrl ? 'QR record is available for rider scanning/viewing.' : 'No QR file is uploaded yet.'}`);
   };
 
-  const handleCaptainRouteSubmit = (event) => {
+  const handleCaptainRouteSubmit = async (event) => {
     event.preventDefault();
 
     const routeSource = resolveLocationArea(captainRoute.source);
@@ -2419,6 +2712,32 @@ export default function App() {
     setCaptainPanelMessage(routeMessage);
     setCaptainRouteAlert(routeMessage);
     setCaptainRouteUpdated(true);
+
+    const captainId = apiSession?.user?.role === 'captain' ? apiSession.profile?.id : '';
+
+    if (captainId) {
+      try {
+        const savedRoute = await apiRequest(`/api/captains/${captainId}/routes`, {
+          method: 'POST',
+          body: JSON.stringify({
+            fromLocation: routeSource,
+            toLocation: routeDestination,
+            vacantSeats: pricing.vacantSeats,
+            distanceKm: routeDistance
+          })
+        });
+
+        setApiSession((current) => current ? ({
+          ...current,
+          activeRouteId: savedRoute.id
+        }) : current);
+        setCaptainPanelMessage(`${routeMessage} Backend route saved as active.`);
+        setCaptainRouteAlert(`${routeMessage} Backend route saved as active.`);
+        await syncCaptainRequestsFromBackend();
+      } catch (error) {
+        setCaptainPanelMessage(`${routeMessage} Backend route save failed: ${error.message}`);
+      }
+    }
   };
 
   const handleSignupChange = (field, value) => {
@@ -2479,7 +2798,7 @@ export default function App() {
     return !Object.keys(errors).length;
   };
 
-  const handleLoginSubmit = (event) => {
+  const handleLoginSubmit = async (event) => {
     event.preventDefault();
 
     if (!validateAuthForm('login')) {
@@ -2487,10 +2806,13 @@ export default function App() {
       return;
     }
 
-    handleLoginOpen(signupRole);
+    await handleLoginOpen(signupRole, {
+      email: signupForm.email,
+      password: signupForm.password
+    });
   };
 
-  const handleSignupSubmit = (event) => {
+  const handleSignupSubmit = async (event) => {
     event.preventDefault();
 
     if (!validateAuthForm('signup')) {
@@ -2512,6 +2834,40 @@ export default function App() {
       api: apiPreview.signup,
       createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
+
+    try {
+      const payload = await apiRequest('/api/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify({
+          role: signupRole.toLowerCase(),
+          fullName: signupForm.fullName,
+          email: signupForm.email,
+          phone: signupForm.phone,
+          password: signupForm.password,
+          gender: signupForm.gender,
+          homeStop: signupForm.homeStop,
+          emergencyContact: signupForm.emergencyContact,
+          vehicleType: signupForm.vehicleType,
+          vehicleNumber: signupForm.vehicleNumber,
+          licenseNumber: signupForm.licenseNumber,
+          upiId: `${normalize(signupForm.fullName).replace(/\s+/g, '') || 'captain'}@upi`
+        })
+      });
+
+      applyBackendSession(payload, signupRole);
+      setSignupRecords((records) => [{ ...record, api: 'Backend saved' }, ...records].slice(0, 4));
+      setAuthStatus(`${signupRole} account created and stored in backend database.`);
+      setActivePanel(signupRole === 'Captain' ? 'captain-dashboard' : 'profile');
+      setAppPage(signupRole === 'Captain' ? 'captain' : 'rider');
+      return;
+    } catch (error) {
+      if (error.status) {
+        setAuthStatus(`Backend signup stopped: ${error.message}`);
+        return;
+      }
+
+      setBackendStatus('Backend is not running, so this signup is using page demo mode.');
+    }
 
     setSignupRecords((records) => [record, ...records].slice(0, 4));
 
@@ -2551,16 +2907,41 @@ export default function App() {
     setAppPage(signupRole === 'Captain' ? 'captain' : 'rider');
   };
 
-  const handleLoginOpen = (role) => {
+  const handleLoginOpen = async (role, credentials = {}) => {
     setSignupRole(role);
     setAuthErrors({});
     setActivePanel(role === 'Captain' ? 'captain-dashboard' : 'profile');
-    setAuthStatus(`${role} login successful for demo. Real backend will verify email/Gmail token first.`);
+    const demoCredentials = role === 'Captain'
+      ? { email: 'rahul.captain@riderelay.in', password: 'captain123' }
+      : { email: 'ananya@riderelay.in', password: 'demo123' };
+    const loginCredentials = {
+      email: credentials.email || demoCredentials.email,
+      password: credentials.password || demoCredentials.password
+    };
+
+    try {
+      const payload = await apiRequest('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(loginCredentials)
+      });
+
+      applyBackendSession(payload, role);
+      setAuthStatus(`${role} login verified by backend database.`);
+    } catch (error) {
+      if (error.status) {
+        setAuthStatus(`Backend login failed: ${error.message}. Demo page opened for testing.`);
+      } else {
+        setBackendStatus('Backend is not running, demo login opened.');
+        setAuthStatus(`${role} login successful for demo. Start backend API to verify email/Gmail token.`);
+      }
+    }
+
     setAppPage(role === 'Captain' ? 'captain' : 'rider');
   };
 
   const handleLogout = () => {
     window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    setApiSession(null);
     setCaptainSession((current) => ({
       ...current,
       coveredMoney: 0,
@@ -2578,7 +2959,7 @@ export default function App() {
     }));
   };
 
-  const handleApplyCaptainTarget = () => {
+  const handleApplyCaptainTarget = async () => {
     setCaptainSession((current) => ({
       ...current,
       period: captainTargetDraft.period,
@@ -2587,6 +2968,23 @@ export default function App() {
     }));
     setIsCaptainTargetEditing(false);
     setCaptainPanelMessage(`${captainTargetDraft.period} target updated to Rs ${captainTargetDraft.targetMoney}. Rider fares remain fair-share only.`);
+
+    const captainId = apiSession?.user?.role === 'captain' ? apiSession.profile?.id : '';
+
+    if (captainId) {
+      try {
+        await apiRequest(`/api/captains/${captainId}/dashboard`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            targetPeriod: captainTargetDraft.period.toLowerCase(),
+            targetAmount: captainTargetDraft.targetMoney
+          })
+        });
+        setBackendStatus('Captain target saved in backend dashboard.');
+      } catch (error) {
+        setBackendStatus(`Captain target backend save failed: ${error.message}`);
+      }
+    }
   };
 
   const handleEditCaptainTarget = () => {
@@ -2604,7 +3002,7 @@ export default function App() {
     setCaptainPanelMessage(message);
   };
 
-  const handleCaptainSendAlert = (requestId) => {
+  const handleCaptainSendAlert = async (requestId) => {
     const request = captainRequests.find((item) => item.id === requestId);
     const sentAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const message = riderChatDrafts[requestId] || captainChatMessage;
@@ -2617,9 +3015,22 @@ export default function App() {
       },
       `Alert sent to ${request?.rider ?? 'rider'}: ${message}`
     );
+
+    try {
+      await apiRequest(`/api/captain/requests/${requestId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status: request?.status === 'pending' ? 'location-alert' : 'accepted',
+          captainMessage: message
+        })
+      });
+      setBackendStatus('Captain alert saved in backend rider request.');
+    } catch (error) {
+      setBackendStatus(`Backend alert save skipped: ${error.message}`);
+    }
   };
 
-  const handleCaptainAccept = (requestId) => {
+  const handleCaptainAccept = async (requestId) => {
     const request = captainRequests.find((item) => item.id === requestId);
 
     if (!request) {
@@ -2664,6 +3075,19 @@ export default function App() {
       },
       `${captainProfile.name} accepted ${request?.rider ?? 'rider'} request. Alert sent to rider for pickup presence confirmation.`
     );
+
+    try {
+      await apiRequest(`/api/captain/requests/${requestId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status: 'accepted',
+          captainMessage: 'Captain accepted your request. Please confirm when Captain reaches your pickup location.'
+        })
+      });
+      setBackendStatus('Captain acceptance saved in backend.');
+    } catch (error) {
+      setBackendStatus(`Backend accept update skipped: ${error.message}`);
+    }
   };
 
   const handleCaptainRiderPayment = (requestId) => {
@@ -2675,7 +3099,7 @@ export default function App() {
     setCaptainPanelMessage(`Payment received from ${request?.rider ?? 'rider'}. Verified app payment added to Captain ${captainSession.period.toLowerCase()} earnings.`);
   };
 
-  const handleCaptainDecline = (requestId) => {
+  const handleCaptainDecline = async (requestId) => {
     const request = captainRequests.find((item) => item.id === requestId);
     updateCaptainRequest(
       requestId,
@@ -2687,9 +3111,22 @@ export default function App() {
       },
       `${captainProfile.name} declined ${request?.rider ?? 'rider'} request. Rider alert sent and RideRelay will move request to another Captain.`
     );
+
+    try {
+      await apiRequest(`/api/captain/requests/${requestId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status: 'declined',
+          captainMessage: 'Captain declined this request. RideRelay will assign another Captain.'
+        })
+      });
+      setBackendStatus('Captain decline saved in backend.');
+    } catch (error) {
+      setBackendStatus(`Backend decline update skipped: ${error.message}`);
+    }
   };
 
-  const handleCaptainPresence = (requestId, isPresent) => {
+  const handleCaptainPresence = async (requestId, isPresent) => {
     const request = captainRequests.find((item) => item.id === requestId);
     const withinRange = (request?.distanceMeters ?? 9999) <= 500;
     const captainMessage = isPresent
@@ -2712,9 +3149,19 @@ export default function App() {
           ? `Rider marked Captain not at location, but GPS is within ${request?.distanceMeters ?? 500}m. Alert sent: Captain will reach shortly.`
           : `Rider marked Captain not at location and GPS is outside 500m. Rider can choose another Captain.`
     );
+
+    try {
+      await apiRequest(`/api/rides/${requestId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'present-at-pickup' })
+      });
+      setBackendStatus(isPresent ? 'Pickup presence saved in backend.' : 'Pickup alert saved in backend.');
+    } catch (error) {
+      setBackendStatus(`Backend presence update skipped: ${error.message}`);
+    }
   };
 
-  const handleCaptainRideStatus = (requestId, status, sharedFare) => {
+  const handleCaptainRideStatus = async (requestId, status, sharedFare) => {
     const request = captainRequests.find((item) => item.id === requestId);
     const isCompleted = status === 'ride-completed';
     const completedFare = sharedFare ?? request?.fare ?? 0;
@@ -2776,6 +3223,19 @@ export default function App() {
         ? 'Ride started by Captain. Rider alert sent.'
         : `Ride completed. Shared fare Rs ${completedFare} counted toward Captain ${captainSession.period.toLowerCase()} earnings.`
     );
+
+    try {
+      await apiRequest(`/api/rides/${requestId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      });
+      setBackendStatus(status === 'ride-started' ? 'Ride start saved in backend.' : 'Ride completion saved in backend.');
+      if (isCompleted) {
+        await syncCaptainRequestsFromBackend();
+      }
+    } catch (error) {
+      setBackendStatus(`Backend ride status update skipped: ${error.message}`);
+    }
   };
 
   const handleCloseCaptainSession = () => {
@@ -2796,7 +3256,7 @@ export default function App() {
     setPaymentStatus(bookedRide ? `Rs ${bookedRide.fare} ready to pay by ${method}.` : `${method} selected for your ride.`);
   };
 
-  const handlePayNow = () => {
+  const handlePayNow = async () => {
     if (selectedPickupRider && rideStage === 'completed') {
       handlePaySelectedDriver();
       return;
@@ -2910,6 +3370,12 @@ export default function App() {
       </div>
     );
   };
+
+  useEffect(() => {
+    if (appPage === 'captain' && apiSession?.user?.role === 'captain') {
+      syncCaptainRequestsFromBackend();
+    }
+  }, [appPage, apiSession?.profile?.id]);
 
   const renderAuthPage = () => {
     const isSignup = authMode === 'signup';
