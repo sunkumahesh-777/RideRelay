@@ -8,6 +8,12 @@ const {
   audit,
   seedDb
 } = require('./db');
+const {
+  loadLocations,
+  filterLocations,
+  createLocation,
+  updateLocation
+} = require('./locations');
 
 const PORT = Number(process.env.PORT || 4000);
 const RATE_PER_KM = 10;
@@ -168,8 +174,51 @@ async function handleRequest(req, res) {
         riders: db.riders,
         captains: db.captains,
         captainRoutes: db.captainRoutes,
-        rideRequests: db.rideRequests
+        rideRequests: db.rideRequests,
+        locations: loadLocations()
       });
+      return;
+    }
+
+    if (req.method === 'GET' && path === '/api/locations') {
+      sendJson(res, 200, {
+        locations: filterLocations({
+          search: url.searchParams.get('search') || '',
+          category: url.searchParams.get('category') || 'All',
+          nearLat: url.searchParams.get('nearLat'),
+          nearLng: url.searchParams.get('nearLng'),
+          radiusMeters: url.searchParams.get('radiusMeters'),
+          limit: url.searchParams.get('limit')
+        })
+      });
+      return;
+    }
+
+    if (req.method === 'POST' && path === '/api/locations') {
+      const body = await parseBody(req);
+      const result = createLocation(body);
+
+      if (result.error) {
+        sendJson(res, 400, result);
+        return;
+      }
+
+      sendJson(res, 201, result);
+      return;
+    }
+
+    const locationParams = routeMatches(path, '/api/locations/:id');
+
+    if (locationParams && req.method === 'PATCH') {
+      const body = await parseBody(req);
+      const result = updateLocation(locationParams.id, body);
+
+      if (result.error) {
+        sendJson(res, 404, result);
+        return;
+      }
+
+      sendJson(res, 200, result);
       return;
     }
 

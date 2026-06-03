@@ -11,6 +11,7 @@ const initialDb = {
   captains: [],
   captainRoutes: [],
   rideRequests: [],
+  locations: [],
   payments: [],
   reviews: [],
   auditLogs: []

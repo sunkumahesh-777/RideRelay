@@ -1,10 +1,64 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
 const assetPath = (fileName) => `${import.meta.env.BASE_URL}${fileName}`;
 const SESSION_STORAGE_KEY = 'riderelay-session';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 const ACTIVE_CAPTAIN_REQUEST_STATUSES = ['accepted', 'present-at-pickup', 'ride-started'];
-const CAPTAIN_ROUTE_RATE_PER_KM = 10;
+const CAPTAIN_SHARE_RATE_PER_KM = 9;
+const PLATFORM_FEE = 5;
+const RAPIDO_STYLE_RATE_PER_KM = 16;
+const WALKING_MINUTES_PER_KM = 12;
+const CALORIES_PER_WALKING_KM = 50;
+const CO2_KG_PER_KM_SHARED = 0.12;
+
+function getStoredSession() {
+  try {
+    return window.localStorage?.getItem(SESSION_STORAGE_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function setStoredSession(session) {
+  try {
+    window.localStorage?.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  } catch {
+    // Some embedded browsers restrict local storage; keep the app usable without it.
+  }
+}
+
+function clearStoredSession() {
+  try {
+    window.localStorage?.removeItem(SESSION_STORAGE_KEY);
+  } catch {
+    // Storage may be unavailable in restricted browser contexts.
+  }
+}
+
+const mapTileModes = {
+  street: {
+    label: 'Street',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenStreetMap contributors'
+  },
+  satellite: {
+    label: 'Satellite',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri'
+  },
+  terrain: {
+    label: 'Terrain',
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution: 'Map data &copy; OpenStreetMap contributors, SRTM | OpenTopoMap'
+  },
+  traffic: {
+    label: 'Traffic',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenStreetMap contributors'
+  }
+};
 
 function isActiveCaptainRequest(request) {
   return ACTIVE_CAPTAIN_REQUEST_STATUSES.includes(request.status);
@@ -342,7 +396,7 @@ const quickRoutes = [
 
 const vehicles = ['Any', 'Bike', 'Car'];
 const paymentMethods = ['UPI', 'Card', 'Wallet', 'Cash'];
-const locationCategories = ['All', 'Commute', 'Tourist', 'Divine', 'Park', 'Amusement', 'Mall', 'Food', 'Office', 'College', 'Institution', 'Hospital', 'Junction', 'Airport'];
+const locationCategories = ['All', 'Commute', 'Tourist', 'Divine', 'Park', 'Amusement', 'Mall', 'Food', 'Office', 'College', 'Institution', 'Hospital', 'Junction', 'Metro Exit', 'Airport'];
 const hydMapBounds = {
   minLat: 17.23,
   maxLat: 17.65,
@@ -362,7 +416,45 @@ const relayHubs = [
   'Charminar',
   'Patancheru',
   'Pahadi Shareef',
-  'Shamshabad Airport'
+  'Shamshabad Airport',
+  'Manikonda',
+  'Narsingi',
+  'Kokapet',
+  'Nanakramguda',
+  'Financial District',
+  'HITEC City',
+  'Madhapur',
+  'Kondapur'
+];
+const highDemandCorridors = [
+  {
+    id: 'west-growth-loop',
+    title: 'West City Growth Loop',
+    demand: 'Very high office and residential movement',
+    hubs: ['Mehdipatnam', 'Tolichowki', 'Manikonda', 'Narsingi', 'Kokapet', 'Financial District', 'Nanakramguda', 'Gachibowli'],
+    note: 'Best for riders moving toward IT offices, villas, colleges, and evening return flow.'
+  },
+  {
+    id: 'it-core-loop',
+    title: 'IT Core Interlink',
+    demand: 'Peak morning and evening demand',
+    hubs: ['Miyapur', 'Kondapur', 'HITEC City', 'Madhapur', 'Gachibowli', 'Financial District', 'Nanakramguda'],
+    note: 'Connects metro-side riders to office corridors without Captain detours.'
+  },
+  {
+    id: 'central-to-west',
+    title: 'Central City to West Jobs',
+    demand: 'Strong daily commute flow',
+    hubs: ['Ameerpet', 'Punjagutta', 'Jubilee Hills', 'Madhapur', 'Gachibowli', 'Nanakramguda', 'Kokapet'],
+    note: 'Useful when Captains start from central city and pass through west Hyderabad.'
+  },
+  {
+    id: 'south-west-connect',
+    title: 'Mehdipatnam to Airport-West Link',
+    demand: 'Good long-route sharing potential',
+    hubs: ['Mehdipatnam', 'Tolichowki', 'Shaikpet', 'Manikonda', 'Narsingi', 'Kokapet', 'Shamshabad Airport'],
+    note: 'Keeps pickup pins fixed while connecting long routes through safer public points.'
+  }
 ];
 const roadDistanceKm = {
   'lb nagar->lakdikapul': 11.8,
@@ -426,10 +518,42 @@ const roadDistanceKm = {
   'lb nagar->mallapur': 13.2,
   'mallapur->lb nagar': 13.2,
   'mallapur->pahadi shareef': 28.4,
-  'pahadi shareef->mallapur': 28.4
+  'pahadi shareef->mallapur': 28.4,
+  'mehdipatnam->tolichowki': 4.8,
+  'tolichowki->mehdipatnam': 4.8,
+  'tolichowki->manikonda': 6.2,
+  'manikonda->tolichowki': 6.2,
+  'manikonda->narsingi': 6.1,
+  'narsingi->manikonda': 6.1,
+  'narsingi->kokapet': 4.2,
+  'kokapet->narsingi': 4.2,
+  'kokapet->financial district': 4.8,
+  'financial district->kokapet': 4.8,
+  'financial district->nanakramguda': 2.4,
+  'nanakramguda->financial district': 2.4,
+  'nanakramguda->gachibowli': 4.1,
+  'gachibowli->nanakramguda': 4.1,
+  'miyapur->kondapur': 8.7,
+  'kondapur->miyapur': 8.7,
+  'kondapur->hitec city': 5.9,
+  'hitec city->kondapur': 5.9,
+  'hitec city->madhapur': 2.1,
+  'madhapur->hitec city': 2.1,
+  'madhapur->gachibowli': 7.6,
+  'gachibowli->madhapur': 7.6,
+  'ameerpet->punjagutta': 3.1,
+  'punjagutta->ameerpet': 3.1,
+  'punjagutta->jubilee hills': 6.4,
+  'jubilee hills->punjagutta': 6.4,
+  'jubilee hills->madhapur': 7.2,
+  'madhapur->jubilee hills': 7.2,
+  'gachibowli->financial district': 5.3,
+  'financial district->gachibowli': 5.3,
+  'kokapet->shamshabad airport': 23.4,
+  'shamshabad airport->kokapet': 23.4
 };
 
-const locationLibrary = [
+let locationLibrary = [
   { id: 1, name: 'Ameerpet Metro', area: 'Ameerpet', type: 'Metro', pickupHint: 'Gate 2', lat: 17.4375, lng: 78.4483 },
   { id: 2, name: 'SR Nagar Metro', area: 'SR Nagar', type: 'Metro', pickupHint: 'Gate 3', lat: 17.4418, lng: 78.4444 },
   { id: 3, name: 'Punjagutta Junction', area: 'Punjagutta', type: 'Junction', pickupHint: 'Central mall side', lat: 17.4267, lng: 78.4520 },
@@ -652,9 +776,11 @@ const savedTrips = [
 ];
 
 const riderOffers = [
-  'Save Rs 10 on your shared car ride',
-  'Invite a rider and earn 50 wallet points',
-  'No convenience fee on UPI payments today'
+  'Walk 100m to pickup hub = 1 Eco Point',
+  'Walk 100m from drop hub = 1 Eco Point',
+  'Use shared RideRelay trip = 2 Eco Points',
+  'Choose official pickup hub = 3 bonus Eco Points',
+  'Refer friend after first successful ride = 25 Eco Points'
 ];
 
 const signupFields = {
@@ -790,19 +916,27 @@ async function apiRequest(path, options = {}) {
 }
 
 function getCaptainTargetMoney(distanceKm) {
-  return Math.max(10, Math.round(distanceKm * CAPTAIN_ROUTE_RATE_PER_KM));
+  return Math.max(20, Math.round(distanceKm * CAPTAIN_SHARE_RATE_PER_KM));
 }
 
 function getCaptainRoutePricing(distanceKm, vacantSeats) {
   const safeVacantSeats = Math.max(1, Number(vacantSeats) || 1);
-  const targetMoney = getCaptainTargetMoney(distanceKm);
-  const perRiderKm = CAPTAIN_ROUTE_RATE_PER_KM / safeVacantSeats;
-  const perRiderFare = targetMoney / safeVacantSeats;
+  const fuelCost = Math.max(0, distanceKm * CAPTAIN_SHARE_RATE_PER_KM);
+  const sharedFuelFare = fuelCost / safeVacantSeats;
+  const perRiderFare = Math.max(8, Math.ceil(sharedFuelFare + PLATFORM_FEE));
+  const targetMoney = Math.max(20, Math.ceil(fuelCost));
+  const rapidoPrice = Math.ceil(distanceKm * RAPIDO_STYLE_RATE_PER_KM);
+  const rideRelayPrice = perRiderFare;
 
   return {
     targetMoney,
-    perRiderKm,
+    fuelCost,
+    platformFee: PLATFORM_FEE,
+    perRiderKm: perRiderFare / Math.max(1, distanceKm),
     perRiderFare,
+    rapidoPrice,
+    rideRelayPrice,
+    amountSaved: Math.max(0, rapidoPrice - rideRelayPrice),
     vacantSeats: safeVacantSeats
   };
 }
@@ -810,7 +944,47 @@ function getCaptainRoutePricing(distanceKm, vacantSeats) {
 function getCaptainSharedFare(distanceKm, vacantSeats) {
   const safeVacantSeats = Math.max(1, Number(vacantSeats) || 1);
 
-  return Math.max(10, Math.ceil(getCaptainTargetMoney(distanceKm) / safeVacantSeats));
+  return getCaptainRoutePricing(distanceKm, safeVacantSeats).perRiderFare;
+}
+
+function getOfficialHubLocations() {
+  return locationLibrary.filter((location) => ['Metro', 'Metro Exit', 'Bus', 'Rail'].includes(location.type));
+}
+
+function getNearestHub(area) {
+  const areaPoint = getLocationPoint(area);
+  const officialHubs = getOfficialHubLocations();
+
+  if (!officialHubs.length) {
+    return null;
+  }
+
+  return officialHubs
+    .map((hub) => ({
+      ...hub,
+      distanceMeters: areaPoint ? getDistanceMeters(areaPoint, hub) : 0
+    }))
+    .sort((a, b) => a.distanceMeters - b.distanceMeters)[0];
+}
+
+function getWalkingMetrics(distanceMeters = 0) {
+  const walkingKm = Math.max(0, distanceMeters / 1000);
+
+  return {
+    distanceMeters: Math.round(distanceMeters),
+    distanceKm: walkingKm,
+    minutes: Math.max(1, Math.round(walkingKm * WALKING_MINUTES_PER_KM)),
+    calories: Math.round(walkingKm * CALORIES_PER_WALKING_KM),
+    ecoPoints: Math.floor(distanceMeters / 100)
+  };
+}
+
+function getRideRelayEcoPoints(pickupWalkMeters, dropWalkMeters, hasSharedTrip = true, usesOfficialHub = true, referredFriend = false) {
+  return Math.floor(pickupWalkMeters / 100)
+    + Math.floor(dropWalkMeters / 100)
+    + (hasSharedTrip ? 2 : 0)
+    + (usesOfficialHub ? 3 : 0)
+    + (referredFriend ? 25 : 0);
 }
 
 function normalize(value) {
@@ -1058,6 +1232,175 @@ function getNativeMapUrl(location) {
   const label = encodeURIComponent(`${location.name}, ${location.area}`);
 
   return `geo:${location.lat},${location.lng}?q=${location.lat},${location.lng}(${label})`;
+}
+
+function getGoogleDirectionsUrl(origin, destination) {
+  const originQuery = origin ? `${origin.lat},${origin.lng}` : '';
+  const destinationQuery = destination ? `${destination.lat},${destination.lng}` : '';
+
+  return `https://www.google.com/maps/dir/?api=1&origin=${originQuery}&destination=${destinationQuery}&travelmode=driving`;
+}
+
+function RideRelayMapPanel({
+  title,
+  subtitle,
+  pickup,
+  destination,
+  nearbyPoints = [],
+  livePoint,
+  liveLabel = 'Live location',
+  mapMode,
+  setMapMode,
+  onUseLiveLocation,
+  safetyNote
+}) {
+  const mapNodeRef = useRef(null);
+  const mapRef = useRef(null);
+  const tileLayerRef = useRef(null);
+  const markerLayerRef = useRef(null);
+  const routeLayerRef = useRef(null);
+  const pickupPoint = getLocationPoint(pickup);
+  const destinationPoint = getLocationPoint(destination);
+  const trafficUrl = getGoogleDirectionsUrl(pickupPoint, destinationPoint);
+
+  useEffect(() => {
+    if (!mapNodeRef.current || mapRef.current) {
+      return;
+    }
+
+    mapRef.current = L.map(mapNodeRef.current, {
+      zoomControl: false,
+      attributionControl: false
+    }).setView([17.4375, 78.4483], 12);
+    L.control.zoom({ position: 'bottomright' }).addTo(mapRef.current);
+    L.control.attribution({ position: 'bottomleft' }).addTo(mapRef.current);
+    markerLayerRef.current = L.layerGroup().addTo(mapRef.current);
+    routeLayerRef.current = L.layerGroup().addTo(mapRef.current);
+    const resizeMap = () => mapRef.current?.invalidateSize();
+    const resizeTimer = window.setTimeout(resizeMap, 250);
+    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resizeMap) : null;
+    resizeObserver?.observe(mapNodeRef.current);
+
+    return () => {
+      window.clearTimeout(resizeTimer);
+      resizeObserver?.disconnect();
+      mapRef.current?.remove();
+      mapRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!mapRef.current) {
+      return;
+    }
+
+    const tileMode = mapTileModes[mapMode] || mapTileModes.street;
+
+    if (tileLayerRef.current) {
+      mapRef.current.removeLayer(tileLayerRef.current);
+    }
+
+    tileLayerRef.current = L.tileLayer(tileMode.url, {
+      attribution: tileMode.attribution,
+      maxZoom: mapMode === 'terrain' ? 17 : 19
+    }).addTo(mapRef.current);
+  }, [mapMode]);
+
+  useEffect(() => {
+    if (!mapRef.current || !markerLayerRef.current || !routeLayerRef.current) {
+      return;
+    }
+
+    markerLayerRef.current.clearLayers();
+    routeLayerRef.current.clearLayers();
+
+    const makeIcon = (label, className) => L.divIcon({
+      className: `leaflet-ride-pin ${className}`,
+      html: `<span>${label}</span>`,
+      iconSize: [34, 34],
+      iconAnchor: [17, 17]
+    });
+    const bounds = [];
+
+    const addMarker = (point, label, className, popup) => {
+      if (!point) {
+        return;
+      }
+
+      const latLng = [point.lat, point.lng];
+      bounds.push(latLng);
+      L.marker(latLng, { icon: makeIcon(label, className) })
+        .bindPopup(popup)
+        .addTo(markerLayerRef.current);
+    };
+
+    addMarker(pickupPoint, 'P', 'pickup', `Pickup: ${pickup}`);
+    addMarker(destinationPoint, 'D', 'drop', `Drop: ${destination}`);
+
+    nearbyPoints.slice(0, 12).forEach((location, index) => {
+      addMarker(location, String(index + 1), 'relay', `${location.name}<br>${location.pickupHint}`);
+    });
+
+    if (livePoint) {
+      addMarker(livePoint, 'L', 'live', liveLabel);
+    }
+
+    if (pickupPoint && destinationPoint) {
+      L.polyline([[pickupPoint.lat, pickupPoint.lng], [destinationPoint.lat, destinationPoint.lng]], {
+        color: mapMode === 'traffic' ? '#f97316' : '#5eead4',
+        weight: 5,
+        opacity: 0.82,
+        dashArray: mapMode === 'traffic' ? '8 8' : ''
+      }).addTo(routeLayerRef.current);
+    }
+
+    if (bounds.length) {
+      mapRef.current.fitBounds(bounds, { padding: [34, 34], maxZoom: 15 });
+    }
+
+    window.setTimeout(() => mapRef.current?.invalidateSize(), 80);
+  }, [pickup, destination, nearbyPoints, livePoint, liveLabel, mapMode, pickupPoint, destinationPoint]);
+
+  return (
+    <div className="live-map-panel">
+      <div className="live-map-heading">
+        <div>
+          <span>Map Library</span>
+          <h4>{title}</h4>
+          <p>{subtitle}</p>
+        </div>
+        <a href={trafficUrl} target="_blank" rel="noreferrer">
+          Navigate
+        </a>
+      </div>
+
+      <div className="map-mode-tabs">
+        {Object.entries(mapTileModes).map(([key, item]) => (
+          <button
+            type="button"
+            className={mapMode === key ? 'active' : ''}
+            key={key}
+            onClick={() => setMapMode(key)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="leaflet-map-shell" ref={mapNodeRef} />
+
+      <div className="live-map-footer">
+        <button type="button" onClick={onUseLiveLocation}>Use Live GPS</button>
+        <span>{safetyNote}</span>
+      </div>
+
+      {mapMode === 'traffic' && (
+        <div className="traffic-note">
+          Traffic mode highlights the route in RideRelay. For exact live traffic, open Navigate or connect Google Routes/Traffic API key.
+        </div>
+      )}
+    </div>
+  );
 }
 
 function getPinStyle(location) {
@@ -1419,6 +1762,12 @@ export default function App() {
   const [selectedLocationId, setSelectedLocationId] = useState(1);
   const [locationSearch, setLocationSearch] = useState('');
   const [locationCategory, setLocationCategory] = useState('All');
+  const [locationApiStatus, setLocationApiStatus] = useState('Using local Hyderabad location library.');
+  const [locationApiVersion, setLocationApiVersion] = useState(0);
+  const [riderMapMode, setRiderMapMode] = useState('street');
+  const [captainMapMode, setCaptainMapMode] = useState('street');
+  const [riderLiveLocation, setRiderLiveLocation] = useState(null);
+  const [captainLiveLocation, setCaptainLiveLocation] = useState(null);
   const [appPage, setAppPage] = useState('auth');
   const [authMode, setAuthMode] = useState('login');
   const [signupRole, setSignupRole] = useState('Rider');
@@ -1454,6 +1803,8 @@ export default function App() {
     source: 'Ameerpet',
     destination: 'BHEL',
     vacantSeats: 2,
+    vehicleType: 'Bike',
+    departureTime: '08:30',
     targetMoney: 176,
     status: 'Route not submitted'
   });
@@ -1547,7 +1898,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const savedSession = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    const savedSession = getStoredSession();
 
     if (!savedSession) {
       return;
@@ -1558,13 +1909,42 @@ export default function App() {
 
       if (parsedSession.appPage === 'captain' || parsedSession.appPage === 'rider') {
         setSignupRole(parsedSession.role || (parsedSession.appPage === 'captain' ? 'Captain' : 'Rider'));
-        setActivePanel(parsedSession.activePanel || (parsedSession.appPage === 'captain' ? 'captain-dashboard' : 'profile'));
+        setActivePanel(parsedSession.activePanel || (parsedSession.appPage === 'captain' ? 'captain-dashboard' : 'home'));
         setAppPage(parsedSession.appPage);
         setAuthStatus('Previous session restored. Login again only after logout.');
       }
     } catch {
-      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+      clearStoredSession();
     }
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadBackendLocations = async () => {
+      try {
+        const payload = await apiRequest('/api/locations?limit=500');
+        const nextLocations = Array.isArray(payload.locations) ? payload.locations : [];
+
+        if (!isMounted || !nextLocations.length) {
+          return;
+        }
+
+        locationLibrary = nextLocations;
+        setLocationApiVersion((version) => version + 1);
+        setLocationApiStatus(`${nextLocations.length} backend locations loaded for Rider and Captain panels.`);
+      } catch (error) {
+        if (isMounted) {
+          setLocationApiStatus(`Backend location API unavailable. Local locations still active. ${error.message}`);
+        }
+      }
+    };
+
+    loadBackendLocations();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -1572,12 +1952,12 @@ export default function App() {
       return;
     }
 
-    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+    setStoredSession({
       appPage,
       activePanel,
       role: appPage === 'captain' ? 'Captain' : 'Rider',
       backendUserId: apiSession?.user?.id || ''
-    }));
+    });
   }, [appPage, activePanel, apiSession]);
 
   const availableStops = useMemo(() => {
@@ -1585,7 +1965,7 @@ export default function App() {
       ...liveDrivers.flatMap((ride) => ride.via),
       ...locationLibrary.flatMap((location) => [location.name, location.area])
     ])].sort();
-  }, []);
+  }, [locationApiVersion]);
 
   const totalAvailableSeats = useMemo(() => {
     return liveDrivers.reduce((total, ride) => total + ride.seats, 0);
@@ -1608,7 +1988,7 @@ export default function App() {
 
       return categoryMatches && textMatches;
     });
-  }, [locationSearch, locationCategory]);
+  }, [locationSearch, locationCategory, locationApiVersion]);
 
   const nearbyRideRelayPoints = useMemo(() => {
     const pickupPoint = getLocationPoint(pickup);
@@ -1623,7 +2003,7 @@ export default function App() {
       .filter((location) => !pickupPoint || location.distanceMeters <= 1500)
       .sort((a, b) => a.distanceMeters - b.distanceMeters)
       .slice(0, 6);
-  }, [pickup]);
+  }, [pickup, locationApiVersion]);
 
   const visibleLocationResults = filteredLocations.slice(0, 18);
 
@@ -1777,6 +2157,42 @@ export default function App() {
 
     setDestination(location.area);
     setStatusMessage(`${location.name} added as destination.`);
+  };
+
+  const handleUseLiveLocation = (role) => {
+    if (!navigator.geolocation) {
+      const message = 'Live GPS is not available in this browser.';
+      role === 'captain' ? setCaptainPanelMessage(message) : setStatusMessage(message);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const livePoint = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: Math.round(position.coords.accuracy || 0)
+        };
+
+        if (role === 'captain') {
+          setCaptainLiveLocation(livePoint);
+          setCaptainPanelMessage(`Captain live GPS updated. Accuracy ${livePoint.accuracy}m.`);
+          return;
+        }
+
+        setRiderLiveLocation(livePoint);
+        setStatusMessage(`Rider live GPS updated. Accuracy ${livePoint.accuracy}m.`);
+      },
+      () => {
+        const message = 'Allow location permission to show live GPS on RideRelay map.';
+        role === 'captain' ? setCaptainPanelMessage(message) : setStatusMessage(message);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 8000,
+        maximumAge: 15000
+      }
+    );
   };
 
   const handleJoinRide = async (ride) => {
@@ -2737,14 +3153,14 @@ export default function App() {
       destination: routeDestination,
       vacantSeats: pricing.vacantSeats,
       targetMoney: suggestedTarget,
-      status: `Active route submitted. ${routeDistance.toFixed(1)} km path. Rider fare is shared by occupied seats.`
+      status: `Active fixed-hub trip submitted for ${captainRoute.departureTime}. ${routeDistance.toFixed(1)} km path. Rider fare uses fuel-share pricing.`
     }));
     setCaptainSession((current) => ({
       ...current,
       coveredMoney: current.coveredMoney,
       active: true
     }));
-    const routeMessage = `Captain route ${routeSource} to ${routeDestination}: ${routeDistance.toFixed(1)} km. Base route rate is Rs ${CAPTAIN_ROUTE_RATE_PER_KM}/km, split by ${pricing.vacantSeats} vacant seat${pricing.vacantSeats === 1 ? '' : 's'} at about Rs ${pricing.perRiderKm.toFixed(1)}/km each. Captain earnings are tracked separately in the ${captainSession.period.toLowerCase()} target dashboard.`;
+    const routeMessage = `Captain route ${routeSource} to ${routeDestination}: ${routeDistance.toFixed(1)} km through fixed hubs. RideRelay share rate is Rs ${CAPTAIN_SHARE_RATE_PER_KM}/km, split by ${pricing.vacantSeats} seat${pricing.vacantSeats === 1 ? '' : 's'} plus Rs ${pricing.platformFee} platform fee. Rider estimate Rs ${pricing.rideRelayPrice}.`;
     setCaptainPanelMessage(routeMessage);
     setCaptainRouteAlert(routeMessage);
     setCaptainRouteUpdated(true);
@@ -2893,7 +3309,7 @@ export default function App() {
       applyBackendSession(payload, signupRole);
       setSignupRecords((records) => [{ ...record, api: 'Backend saved' }, ...records].slice(0, 4));
       setAuthStatus(`${signupRole} account created and stored in backend database.`);
-      setActivePanel(signupRole === 'Captain' ? 'captain-dashboard' : 'profile');
+      setActivePanel(signupRole === 'Captain' ? 'captain-dashboard' : 'home');
       setAppPage(signupRole === 'Captain' ? 'captain' : 'rider');
       return;
     } catch (error) {
@@ -2939,14 +3355,14 @@ export default function App() {
     }
 
     setAuthStatus(`${signupRole} signup created locally. Ready to send payload to ${apiPreview.signup}.`);
-    setActivePanel(signupRole === 'Captain' ? 'captain-dashboard' : 'profile');
+    setActivePanel(signupRole === 'Captain' ? 'captain-dashboard' : 'home');
     setAppPage(signupRole === 'Captain' ? 'captain' : 'rider');
   };
 
   const handleLoginOpen = async (role, credentials = {}) => {
     setSignupRole(role);
     setAuthErrors({});
-    setActivePanel(role === 'Captain' ? 'captain-dashboard' : 'profile');
+    setActivePanel(role === 'Captain' ? 'captain-dashboard' : 'home');
     const demoCredentials = role === 'Captain'
       ? { email: 'rahul.captain@riderelay.in', password: 'captain123' }
       : { email: 'ananya@riderelay.in', password: 'demo123' };
@@ -2976,7 +3392,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    clearStoredSession();
     setApiSession(null);
     setCaptainSession((current) => ({
       ...current,
@@ -3552,6 +3968,29 @@ export default function App() {
   const captainRouteDestination = resolveLocationArea(captainRoute.destination);
   const captainRouteDistance = getLegDistanceKm(captainRouteSource, captainRouteDestination);
   const captainRoutePricing = getCaptainRoutePricing(captainRouteDistance, captainRoute.vacantSeats);
+  const pickupHub = getNearestHub(pickup);
+  const dropHub = getNearestHub(destination);
+  const pickupWalk = getWalkingMetrics(pickupHub?.distanceMeters ?? 0);
+  const dropWalk = getWalkingMetrics(dropHub?.distanceMeters ?? 0);
+  const totalWalkingKm = pickupWalk.distanceKm + dropWalk.distanceKm;
+  const totalCaloriesBurned = pickupWalk.calories + dropWalk.calories;
+  const ecoPointsEarned = getRideRelayEcoPoints(pickupWalk.distanceMeters, dropWalk.distanceMeters, Boolean(bookedRideId || hasSearched), Boolean(pickupHub && dropHub));
+  const monthlyImpact = {
+    walkingKm: totalWalkingKm + 4.8,
+    calories: totalCaloriesBurned + 240,
+    fuelSaved: Math.max(1.2, (validationInfo?.distanceKm || captainRouteDistance || 12) * 0.08),
+    co2Reduced: Math.max(1.6, (validationInfo?.distanceKm || captainRouteDistance || 12) * CO2_KG_PER_KM_SHARED),
+    ecoPoints: ecoPointsEarned + 42
+  };
+  const riderRouteDistance = validationInfo?.distanceKm || getLegDistanceKm(resolveLocationArea(pickup), resolveLocationArea(destination));
+  const riderFuelPricing = getCaptainRoutePricing(riderRouteDistance, Math.max(requiredSeats, totalAvailableSeats > 1 ? 2 : 1));
+  const captainStartPoint = getLocationPoint(captainRouteSource);
+  const captainLiveDistanceMeters = captainLiveLocation && captainStartPoint ? getDistanceMeters(captainLiveLocation, captainStartPoint) : 0;
+  const captainStartTrust = captainLiveLocation
+    ? captainLiveDistanceMeters <= 500
+      ? 'Live start verified within 500m.'
+      : `Warning: Captain live location is ${captainLiveDistanceMeters}m away from declared start.`
+    : 'Use Live GPS to verify Captain start location before matching.';
   const captainVisibleRequests = captainRequests.filter((request) => isCaptainHopAligned(request, captainRouteSource, captainRouteDestination));
   const captainCurrentPin = getCaptainLastCompletedPin(captainVisibleRequests, captainRouteSource);
   const captainCurrentPendingRequests = captainVisibleRequests.filter((request) => (
@@ -3735,7 +4174,7 @@ export default function App() {
                 {pickup} to {destination}
               </strong>
             </div>
-            <button onClick={() => setActivePanel('locations')}>RideRelay Points</button>
+            <button onClick={() => setActivePanel('eco-points')}>RideRelay Points</button>
           </div>
 
           <div className="relay-point-strip">
@@ -3759,6 +4198,20 @@ export default function App() {
               ))}
             </div>
           </div>
+
+          <RideRelayMapPanel
+            title="Rider live route map"
+            subtitle="Street, satellite, terrain, and route traffic view with safe RideRelay pickup pins."
+            pickup={pickup}
+            destination={destination}
+            nearbyPoints={nearbyRideRelayPoints}
+            livePoint={riderLiveLocation}
+            liveLabel="Rider live GPS"
+            mapMode={riderMapMode}
+            setMapMode={setRiderMapMode}
+            onUseLiveLocation={() => handleUseLiveLocation('rider')}
+            safetyNote="Captain receives assigned pickup pin, not unnecessary full rider journey."
+          />
 
           <div className="form-group">
             <label htmlFor="pickup">Pickup Location</label>
@@ -4329,10 +4782,16 @@ export default function App() {
             {(appPage === 'captain'
               ? [['captain-dashboard', 'Dashboard'], ['captain', 'Route Setup'], ['captain-riders', 'Rider Section'], ['captain-bank', 'Bank Details']]
               : [
+                ['home', 'Home'],
+                ['rider-search', 'Rider Search'],
+                ['fixed-hubs', 'Fixed Pickup Hubs'],
+                ['eco-points', 'RideRelay Points'],
+                ['monthly-impact', 'Monthly Impact'],
+                ['rewards', 'Rewards'],
+                ['trust', 'Safety & Trust'],
                 ['profile', 'Profile'],
                 ['payments', 'Payments'],
                 ['trips', 'Trips'],
-                ['safety', 'Safety'],
                 ['locations', 'Locations'],
                 ['offers', 'Offers']
               ]).map(([key, label]) => (
@@ -4347,6 +4806,260 @@ export default function App() {
           </aside>
 
           <div className="panel-content">
+            {activePanel === 'home' && (
+              <div className="panel-grid platform-grid">
+                <div className="panel-card platform-hero-card">
+                  <span>Save Fuel . Save Money . Share Empty Seats</span>
+                  <h3>RideRelay is fixed-hub fuel sharing, not taxi booking.</h3>
+                  <p>Riders walk to safe pickup hubs like metro stations, bus stops, and railway stations. Captains share unused seats only when their route already passes through those hubs.</p>
+                  <button className="panel-action" type="button" onClick={() => setActivePanel('rider-search')}>Start Rider Search</button>
+                </div>
+
+                <div className="platform-card-list">
+                  <div className="platform-mini-card">
+                    <span>Pickup Hub</span>
+                    <strong>{pickupHub?.name ?? pickup}</strong>
+                    <small>{pickupWalk.distanceMeters}m walk . {pickupWalk.minutes} min</small>
+                  </div>
+                  <div className="platform-mini-card">
+                    <span>Fuel Share</span>
+                    <strong>Rs {riderFuelPricing.rideRelayPrice}</strong>
+                    <small>Saved Rs {riderFuelPricing.amountSaved} vs Rapido style price</small>
+                  </div>
+                  <div className="platform-mini-card">
+                    <span>RideRelay Points</span>
+                    <strong>{ecoPointsEarned}</strong>
+                    <small>Earn Eco Points from walking, hub pickup, and shared rides</small>
+                  </div>
+                </div>
+
+                <div className="panel-card corridor-panel">
+                  <h3>Saved High-Demand Corridors</h3>
+                  <p>RideRelay marks these city flows as strong rider and Captain zones. Captains should pass through these fixed hubs instead of taking doorstep detours.</p>
+                  <div className="corridor-grid">
+                    {highDemandCorridors.map((corridor) => (
+                      <div className="corridor-card" key={corridor.id}>
+                        <span>{corridor.demand}</span>
+                        <strong>{corridor.title}</strong>
+                        <p>{corridor.hubs.join(' -> ')}</p>
+                        <small>{corridor.note}</small>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activePanel === 'rider-search' && (
+              <div className="panel-grid platform-grid">
+                <div className="panel-card">
+                  <h3>Rider Search</h3>
+                  <p>Select fixed pickup and drop hubs. RideRelay matches only Captains already passing through those hubs.</p>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="hub-pickup">Pickup Hub</label>
+                      <input id="hub-pickup" list="stops" value={pickup} onChange={(event) => setPickup(event.target.value)} />
+                      <small className="input-help">Nearest official hub: {pickupHub?.name ?? 'Select pickup'}</small>
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="hub-drop">Drop Hub</label>
+                      <input id="hub-drop" list="stops" value={destination} onChange={(event) => setDestination(event.target.value)} />
+                      <small className="input-help">Nearest official hub: {dropHub?.name ?? 'Select drop'}</small>
+                    </div>
+                  </div>
+
+                  <div className="hub-metric-grid">
+                    <div>
+                      <span>Walk to pickup hub</span>
+                      <strong>{pickupWalk.distanceKm.toFixed(1)} km</strong>
+                      <small>{pickupWalk.minutes} min walk</small>
+                    </div>
+                    <div>
+                      <span>Walk from drop hub</span>
+                      <strong>{dropWalk.distanceKm.toFixed(1)} km</strong>
+                      <small>{dropWalk.minutes} min walk</small>
+                    </div>
+                    <div>
+                      <span>Route match rule</span>
+                      <strong>No detour</strong>
+                      <small>Captain must pass through both hubs</small>
+                    </div>
+                  </div>
+
+                  <button className="panel-action" type="button" onClick={handleFindRide}>Find Hub Match</button>
+                </div>
+
+                <div className="panel-card">
+                  <h3>Fuel Sharing Price</h3>
+                  <div className="price-comparison-grid">
+                    <div>
+                      <span>Rapido style price</span>
+                      <strong>Rs {riderFuelPricing.rapidoPrice}</strong>
+                    </div>
+                    <div>
+                      <span>RideRelay price</span>
+                      <strong>Rs {riderFuelPricing.rideRelayPrice}</strong>
+                    </div>
+                    <div>
+                      <span>Amount saved</span>
+                      <strong>Rs {riderFuelPricing.amountSaved}</strong>
+                    </div>
+                  </div>
+                  <p className="calorie-line">RideRelay share rate is Rs {CAPTAIN_SHARE_RATE_PER_KM}/km. It is split by seats plus Rs {riderFuelPricing.platformFee} platform fee.</p>
+                </div>
+              </div>
+            )}
+
+            {activePanel === 'fixed-hubs' && (
+              <div className="panel-grid platform-grid">
+                <div className="panel-card">
+                  <h3>Fixed Pickup Hubs</h3>
+                  <p>Doorstep pickup is avoided. Riders select official public hubs for safety, lower cost, and easy Captain identification.</p>
+                  <div className="hub-metric-grid">
+                    {[pickupHub, dropHub, ...nearbyRideRelayPoints.slice(0, 4)].filter(Boolean).map((hub) => (
+                      <div key={`hub-module-${hub.id}`}>
+                        <span>{hub.type}</span>
+                        <strong>{hub.name}</strong>
+                        <small>{hub.pickupHint} . {hub.distanceMeters ?? 0}m</small>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="panel-card corridor-panel">
+                  <h3>Interconnected Far-City Hubs</h3>
+                  <p>Kokapet, Nanakramguda, Manikonda, Narsingi, Financial District, Gachibowli, Madhapur, Kondapur, and HITEC City are treated as connected high-flow RideRelay points.</p>
+                  <div className="corridor-grid compact">
+                    {highDemandCorridors.map((corridor) => (
+                      <div className="corridor-card" key={`fixed-${corridor.id}`}>
+                        <strong>{corridor.title}</strong>
+                        <p>{corridor.hubs.join(' -> ')}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <RideRelayMapPanel
+                  title="Fixed hub map"
+                  subtitle="Official pickup/drop hubs with satellite, terrain, street, and traffic mode."
+                  pickup={pickupHub?.area || pickup}
+                  destination={dropHub?.area || destination}
+                  nearbyPoints={nearbyRideRelayPoints}
+                  livePoint={riderLiveLocation}
+                  liveLabel="Rider live GPS"
+                  mapMode={riderMapMode}
+                  setMapMode={setRiderMapMode}
+                  onUseLiveLocation={() => handleUseLiveLocation('rider')}
+                  safetyNote="Fixed hubs reduce fake pickup points and keep Captain route matching clean."
+                />
+              </div>
+            )}
+
+            {activePanel === 'eco-points' && (
+              <div className="panel-grid platform-grid">
+                <div className="panel-card">
+                  <h3>RideRelay Points System</h3>
+                  <p>Rewards are based only on valid RideRelay actions. No daily streaks or fake completion points.</p>
+                  <div className="eco-rule-list">
+                    <span>Walk 100m to pickup hub = 1 Eco Point</span>
+                    <span>Walk 100m from drop hub = 1 Eco Point</span>
+                    <span>Use shared RideRelay trip = 2 Eco Points</span>
+                    <span>Choose official pickup hub = 3 bonus Eco Points</span>
+                    <span>Refer friend after first successful ride = 25 Eco Points</span>
+                  </div>
+                </div>
+
+                <div className="panel-card">
+                  <h3>Calories Tracker</h3>
+                  <strong className="impact-number">{totalCaloriesBurned} kcal</strong>
+                  <p className="calorie-line">You walked {totalWalkingKm.toFixed(1)} km and burned approx {totalCaloriesBurned} kcal.</p>
+                  <div className="hub-metric-grid">
+                    <div>
+                      <span>Pickup walk points</span>
+                      <strong>{pickupWalk.ecoPoints}</strong>
+                    </div>
+                    <div>
+                      <span>Drop walk points</span>
+                      <strong>{dropWalk.ecoPoints}</strong>
+                    </div>
+                    <div>
+                      <span>Total RideRelay Points</span>
+                      <strong>{ecoPointsEarned}</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activePanel === 'monthly-impact' && (
+              <div className="panel-card">
+                <h3>Monthly Impact Dashboard</h3>
+                <p>RideRelay shows real impact from hub walking and shared empty-seat rides.</p>
+                <div className="impact-grid">
+                  <div>
+                    <span>Total walking distance</span>
+                    <strong>{monthlyImpact.walkingKm.toFixed(1)} km</strong>
+                  </div>
+                  <div>
+                    <span>Calories burned</span>
+                    <strong>{monthlyImpact.calories} kcal</strong>
+                  </div>
+                  <div>
+                    <span>Fuel saved</span>
+                    <strong>{monthlyImpact.fuelSaved.toFixed(1)} L</strong>
+                  </div>
+                  <div>
+                    <span>CO2 reduced</span>
+                    <strong>{monthlyImpact.co2Reduced.toFixed(1)} kg</strong>
+                  </div>
+                  <div>
+                    <span>RideRelay Points earned</span>
+                    <strong>{monthlyImpact.ecoPoints}</strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activePanel === 'rewards' && (
+              <div className="panel-card">
+                <h3>Rewards</h3>
+                <p>RideRelay rewards are simple and clean: walking to hubs, shared trips, official hub usage, and referral after first successful ride.</p>
+                <div className="reward-grid">
+                  <div>
+                    <strong>{ecoPointsEarned}</strong>
+                    <span>Current RideRelay Points</span>
+                  </div>
+                  <div>
+                    <strong>25</strong>
+                    <span>Referral after first successful ride</span>
+                  </div>
+                  <div>
+                    <strong>3</strong>
+                    <span>Official hub bonus</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activePanel === 'trust' && (
+              <div className="panel-grid platform-grid">
+                <div className="panel-card safety-list">
+                  <h3>Safety & Trust</h3>
+                  <span>Captain cannot fake start location.</span>
+                  <span>If live location is far from declared start, RideRelay shows warning.</span>
+                  <span>Captain must declare available seats before trip.</span>
+                  <span>Riders can report fake seat count or route mismatch.</span>
+                  <span>Captain sees only assigned hop pickup and hop destination.</span>
+                </div>
+
+                <div className="panel-card">
+                  <h3>Captain Live Start Check</h3>
+                  <p>{captainStartTrust}</p>
+                  <button className="panel-action" type="button" onClick={() => handleUseLiveLocation('captain')}>Verify Captain Live Start</button>
+                </div>
+              </div>
+            )}
+
             {activePanel === 'profile' && (
               <div className="panel-grid">
                 <div className="panel-card profile-card">
@@ -4493,6 +5206,7 @@ export default function App() {
                     <div>
                       <h3>RideRelay Pickup Points</h3>
                       <p>Use GPS-safe public pins like bus stops, metro gates, junctions, and campus gates. Captain sees only the assigned pickup pin.</p>
+                      <small>{locationApiStatus}</small>
                     </div>
                     <strong>{nearbyRideRelayPoints.length} nearby</strong>
                   </div>
@@ -4721,6 +5435,7 @@ export default function App() {
                     <div>
                       <h3>Captain Route Setup</h3>
                       <p>Enter the Captain travel path. RideRelay uses this route to suggest suitable rider requests.</p>
+                      <small>{locationApiStatus}</small>
                     </div>
                     <strong>{captainRouteDistance.toFixed(1)} km</strong>
                   </div>
@@ -4764,7 +5479,62 @@ export default function App() {
                         placeholder="Available seats"
                       />
                     </div>
+                    <div className="form-group">
+                      <label htmlFor="captain-route-vehicle">Vehicle Type</label>
+                      <select
+                        id="captain-route-vehicle"
+                        value={captainRoute.vehicleType}
+                        onChange={(event) => handleCaptainRouteChange('vehicleType', event.target.value)}
+                      >
+                        <option>Bike</option>
+                        <option>Car</option>
+                      </select>
+                    </div>
                   </div>
+
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label htmlFor="captain-route-time">Departure Time</label>
+                      <input
+                        id="captain-route-time"
+                        type="time"
+                        value={captainRoute.departureTime}
+                        onChange={(event) => handleCaptainRouteChange('departureTime', event.target.value)}
+                      />
+                      <small className="input-help">Rider matching prioritizes nearest departure time.</small>
+                    </div>
+                    <div className="form-group trust-warning-box">
+                      <label>Live Start Trust</label>
+                      <strong>{captainStartTrust}</strong>
+                      <small>Captain route matching uses current start location, not home or office address.</small>
+                    </div>
+                  </div>
+
+                  <RideRelayMapPanel
+                    title="Captain route map"
+                    subtitle="Captain route with safe rider pickup pins. Traffic mode is route-aware; exact live traffic needs Google API key."
+                    pickup={captainRouteSource}
+                    destination={captainRouteDestination}
+                    nearbyPoints={captainVisibleRequests.slice(0, 8).map((request, index) => {
+                      const requestPoint = getLocationPoint(request.pickup) || getLocationPoint(captainRouteSource) || { lat: 17.4375, lng: 78.4483 };
+
+                      return {
+                        ...requestPoint,
+                        id: `request-${request.id}`,
+                        name: `${request.rider} pickup`,
+                        area: request.pickup,
+                        type: 'Rider Pin',
+                        pickupHint: request.destination ? `Hop destination: ${request.destination}` : 'Assigned pickup',
+                        distanceMeters: index + 1
+                      };
+                    })}
+                    livePoint={captainLiveLocation}
+                    liveLabel="Captain live GPS"
+                    mapMode={captainMapMode}
+                    setMapMode={setCaptainMapMode}
+                    onUseLiveLocation={() => handleUseLiveLocation('captain')}
+                    safetyNote="Captain map shows assigned hop pickup/drop only for rider safety."
+                  />
 
                   <datalist id="captain-stops">
                     {availableStops.map((stop) => (
@@ -4782,6 +5552,8 @@ export default function App() {
                           source: route.stops[0],
                           destination: route.stops[route.stops.length - 1],
                           vacantSeats: captainRoute.vacantSeats,
+                          vehicleType: captainRoute.vehicleType,
+                          departureTime: captainRoute.departureTime,
                           targetMoney: getCaptainTargetMoney(route.distanceKm),
                           status: `${route.title} selected. Submit to publish this route.`
                         })}
