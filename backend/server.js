@@ -11,6 +11,7 @@ const {
 const {
   loadLocations,
   filterLocations,
+  getDistanceKm,
   createLocation,
   updateLocation
 } = require('./locations');
@@ -97,6 +98,53 @@ function routeFitsRider(route, pickup, destination) {
     || riderPickup.includes(from)
     || riderDestination.includes(to)
   );
+}
+
+function findLocationByText(locations, value = '') {
+  const searchText = normalize(value);
+
+  if (!searchText) {
+    return null;
+  }
+
+  return locations.find((location) => normalize(location.name) === searchText)
+    || locations.find((location) => normalize(location.area) === searchText)
+    || locations.find((location) => normalize(location.name).includes(searchText))
+    || locations.find((location) => normalize(location.area).includes(searchText));
+}
+
+function getRouteDistanceDetails(from, to) {
+  const locations = loadLocations();
+  const fromLocation = findLocationByText(locations, from);
+  const toLocation = findLocationByText(locations, to);
+  const straightDistanceKm = getDistanceKm(fromLocation, toLocation);
+  const distanceKm = straightDistanceKm === null ? null : Number((straightDistanceKm * 1.35).toFixed(1));
+
+  return {
+    from,
+    to,
+    fromHub: fromLocation ? {
+      id: fromLocation.id,
+      name: fromLocation.name,
+      area: fromLocation.area,
+      type: fromLocation.type,
+      lat: fromLocation.lat,
+      lng: fromLocation.lng
+    } : null,
+    toHub: toLocation ? {
+      id: toLocation.id,
+      name: toLocation.name,
+      area: toLocation.area,
+      type: toLocation.type,
+      lat: toLocation.lat,
+      lng: toLocation.lng
+    } : null,
+    distanceKm,
+    distanceMeters: distanceKm === null ? null : Math.round(distanceKm * 1000),
+    baseRatePerKm: RATE_PER_KM,
+    estimatedFuelShare: distanceKm === null ? null : Math.max(10, Math.ceil(distanceKm * RATE_PER_KM)),
+    source: distanceKm === null ? 'location-not-found' : 'RideRelay hub distance estimate'
+  };
 }
 
 function enrichRequest(db, request) {
@@ -238,6 +286,80 @@ async function handleRequest(req, res) {
         }));
 
       sendJson(res, 200, activeRoutes);
+      return;
+    }
+
+    if (req.method === 'GET' && path === '/api/routes/distance') {
+      const from = url.searchParams.get('from') || '';
+      const to = url.searchParams.get('to') || '';
+
+      if (!from || !to) {
+        sendJson(res, 400, { error: 'from and to are required' });
+        return;
+      }
+
+      const distanceDetails = getRouteDistanceDetails(from, to);
+
+      if (distanceDetails.distanceKm === null) {
+        sendJson(res, 404, {
+          error: 'Location not found in RideRelay hubs',
+          ...distanceDetails
+        });
+        return;
+      }
+
+      sendJson(res, 200, distanceDetails);
+      return;
+    }
+
+    if (req.method === 'GET' && path === '/api/rider-routes/search') {
+      const pickup = url.searchParams.get('pickup') || '';
+      const destination = url.searchParams.get('destination') || '';
+      const seats = Math.max(1, Number(url.searchParams.get('seats')) || 1);
+
+      if (!pickup || !destination) {
+        sendJson(res, 400, { error: 'pickup and destination are required' });
+        return;
+      }
+
+      const routeDistance = getRouteDistanceDetails(pickup, destination);
+      const candidateRoutes = db.captainRoutes
+        .filter((route) => route.status === 'active')
+        .filter((route) => Number(route.vacantSeats) >= seats)
+        .filter((route) => routeFitsRider(route, pickup, destination))
+        .map((route) => {
+          const captain = findById(db.captains, route.captainId);
+          const routeDetails = getRouteDistanceDetails(route.fromLocation, route.toLocation);
+
+          return {
+            routeId: route.id,
+            captainId: route.captainId,
+            captainName: captain?.fullName || 'Captain',
+            fromLocation: route.fromLocation,
+            toLocation: route.toLocation,
+            vacantSeats: route.vacantSeats,
+            distanceKm: routeDetails.distanceKm ?? route.distanceKm,
+            fareEstimate: calculateFare(routeDistance.distanceKm ?? route.distanceKm, route.vacantSeats),
+            matchType: normalize(route.fromLocation) === normalize(pickup)
+              && normalize(route.toLocation) === normalize(destination)
+              ? 'direct'
+              : 'passing-through-hub',
+            priorityScore: calculateFare(routeDistance.distanceKm ?? route.distanceKm, route.vacantSeats)
+              + Math.max(0, Number(routeDetails.distanceKm ?? route.distanceKm) - Number(routeDistance.distanceKm ?? 0))
+          };
+        })
+        .sort((a, b) => a.priorityScore - b.priorityScore);
+
+      sendJson(res, 200, {
+        pickup,
+        destination,
+        seats,
+        routeDistance,
+        matches: candidateRoutes,
+        suggestion: candidateRoutes.length
+          ? 'Matching captains found on this RideRelay hub route.'
+          : 'No direct captain route found. Use multi-hop hubs or try nearby official pickup points.'
+      });
       return;
     }
 

@@ -271,6 +271,7 @@ function updateLocation(locationId, body) {
 module.exports = {
   loadLocations,
   filterLocations,
+  getDistanceKm,
   createLocation,
   updateLocation
 };
