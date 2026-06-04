@@ -8,6 +8,19 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      window.addEventListener('error', function (event) {
+        var root = document.getElementById('root');
+        if (!root || root.children.length) return;
+        root.innerHTML = '<div style="min-height:100vh;background:#00130f;color:#fff;display:grid;place-items:center;font-family:Arial,sans-serif;padding:24px"><div style="max-width:760px;border:1px solid #2dd4bf;border-radius:16px;padding:24px;background:#081820"><h1 style="margin:0 0 12px;color:#5eead4">RideRelay startup issue</h1><p>The app loaded but hit this browser error:</p><pre style="white-space:pre-wrap;background:#03100c;padding:16px;border-radius:12px">' + (event.message || 'Unknown error') + '</pre></div></div>';
+      });
+      window.addEventListener('unhandledrejection', function (event) {
+        var root = document.getElementById('root');
+        if (!root || root.children.length) return;
+        var reason = event.reason && (event.reason.message || event.reason.stack) || event.reason || 'Unknown error';
+        root.innerHTML = '<div style="min-height:100vh;background:#00130f;color:#fff;display:grid;place-items:center;font-family:Arial,sans-serif;padding:24px"><div style="max-width:760px;border:1px solid #2dd4bf;border-radius:16px;padding:24px;background:#081820"><h1 style="margin:0 0 12px;color:#5eead4">RideRelay startup issue</h1><p>The app loaded but hit this startup problem:</p><pre style="white-space:pre-wrap;background:#03100c;padding:16px;border-radius:12px">' + reason + '</pre></div></div>';
+      });
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
