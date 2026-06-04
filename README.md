@@ -9,7 +9,13 @@ To share the full editable code with a friend:
 1. Send them the whole `RideRelay` folder, but do not include `node_modules`.
 2. They should install Node.js from https://nodejs.org if they do not already have it.
 3. They should open the `RideRelay` folder in VS Code or any code editor.
-4. They should run:
+4. They should open the frontend folder:
+
+```bash
+cd frontend
+```
+
+5. They should run:
 
 ```bash
 npm install
@@ -25,6 +31,7 @@ To test the app on another device on the same Wi-Fi:
 1. Start the app on your computer:
 
 ```bash
+cd frontend
 npm run dev
 ```
 
@@ -50,10 +57,11 @@ For friends who only need to view the site, deploy it with Vercel, Netlify, or G
 Build the production version with:
 
 ```bash
+cd frontend
 npm run build
 ```
 
-The finished website files will be created in the `dist` folder.
+The finished website files will be created in the `frontend/dist` folder.
 
 ## Run the Backend API
 
@@ -62,6 +70,7 @@ RideRelay now includes a starter backend API using Node.js and a local JSON data
 Start the API server:
 
 ```bash
+cd frontend
 npm run api
 ```
 

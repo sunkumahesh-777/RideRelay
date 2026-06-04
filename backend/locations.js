@@ -8,7 +8,7 @@ const {
   audit
 } = require('./db');
 
-const appPath = path.join(__dirname, '..', 'src', 'App.jsx');
+const appPath = path.join(__dirname, '..', 'frontend', 'src', 'App.jsx');
 
 function normalize(value = '') {
   return String(value).trim().toLowerCase();
