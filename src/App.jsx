@@ -1055,6 +1055,12 @@ function getCoordinateDistanceKm(from, to) {
   return getDistanceKm(from, to) ?? 0;
 }
 
+function getDistanceMeters(from, to) {
+  const distanceKm = getDistanceKm(from, to);
+
+  return distanceKm === null ? 0 : Math.round(distanceKm * 1000);
+}
+
 function getBearingDegrees(from, to) {
   if (!from || !to) {
     return 0;
