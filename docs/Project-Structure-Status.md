@@ -15,6 +15,12 @@ Step 2 completed:
 - Backend kept in `backend/`.
 - Backend location seed reader now reads from `frontend/src/App.jsx`.
 
+Step 3 completed:
+
+- Database folder added.
+- PostgreSQL schema added.
+- Hyderabad pickup hub seed file added.
+
 ## Current Folder Structure
 
 Current project path:
@@ -27,6 +33,7 @@ Current important folders:
 RideRelay/
 ├── .github/
 ├── backend/
+├── database/
 ├── docs/
 ├── frontend/
 ├── .gitignore
@@ -119,7 +126,17 @@ Completed APIs:
 
 ## Database Status
 
-Current demo database:
+Production database design added:
+
+```text
+database/
+├── schema.sql
+├── migrations/
+└── seed/
+    └── hyderabad_hubs.sql
+```
+
+Current demo database still used by the Node backend:
 
 ```text
 backend/data/riderelay-db.json
@@ -156,9 +173,7 @@ This means:
 Next work can be:
 
 ```text
-Phase 3: Add database folder with schema.sql
 Phase 4: Add Postman API collection
 Phase 5: Add admin process
 Phase 6: Add deployment guide
 ```
-
