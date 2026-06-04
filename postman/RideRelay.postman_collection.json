@@ -1,0 +1,383 @@
+{
+  "info": {
+    "name": "RideRelay API",
+    "description": "Postman collection for RideRelay prototype backend APIs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/health"
+          }
+        },
+        {
+          "name": "Bootstrap Demo Data",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/bootstrap"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Signup Rider",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"rider\",\n  \"fullName\": \"Demo Rider\",\n  \"email\": \"demo.rider@riderelay.in\",\n  \"phone\": \"+91 90000 11111\",\n  \"password\": \"demo123\",\n  \"gender\": \"female\",\n  \"homeStop\": \"Ameerpet\",\n  \"emergencyContact\": \"+91 90000 22222\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/signup"
+          }
+        },
+        {
+          "name": "Signup Captain",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"captain\",\n  \"fullName\": \"Demo Captain\",\n  \"email\": \"demo.captain@riderelay.in\",\n  \"phone\": \"+91 90000 33333\",\n  \"password\": \"demo123\",\n  \"gender\": \"male\",\n  \"vehicleType\": \"Bike\",\n  \"vehicleNumber\": \"TS09 RR 9999\",\n  \"licenseNumber\": \"DL-DEMO-9999\",\n  \"upiId\": \"demo@upi\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/signup"
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ananya@riderelay.in\",\n  \"password\": \"demo123\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Profiles",
+      "item": [
+        {
+          "name": "Get Rider Profile",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/riders/{{riderId}}/profile"
+          }
+        },
+        {
+          "name": "Update Rider Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Ananya Rao\",\n  \"homeStop\": \"Ameerpet\",\n  \"gender\": \"female\",\n  \"emergencyContact\": \"+91 90000 44444\"\n}"
+            },
+            "url": "{{baseUrl}}/api/riders/{{riderId}}/profile"
+          }
+        },
+        {
+          "name": "Get Captain Profile",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/captains/{{captainId}}/profile"
+          }
+        },
+        {
+          "name": "Update Captain Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Rahul Captain\",\n  \"gender\": \"male\",\n  \"vehicleType\": \"Bike\",\n  \"vehicleNumber\": \"TS09 RR 2045\",\n  \"licenseNumber\": \"DL-RR-2045\"\n}"
+            },
+            "url": "{{baseUrl}}/api/captains/{{captainId}}/profile"
+          }
+        },
+        {
+          "name": "Update Captain Payment Details",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountHolder\": \"Rahul Captain\",\n  \"bankName\": \"RideRelay Partner Bank\",\n  \"accountNumber\": \"XXXXXX2045\",\n  \"ifsc\": \"RRLY0002045\",\n  \"upiId\": \"rahul@upi\",\n  \"qrFileName\": \"rahul-qr.png\",\n  \"qrMimeType\": \"image/png\",\n  \"qrDataUrl\": \"\"\n}"
+            },
+            "url": "{{baseUrl}}/api/captains/{{captainId}}/payment"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Routes And Matching",
+      "item": [
+        {
+          "name": "Create Captain Trip",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromLocation\": \"Ameerpet\",\n  \"toLocation\": \"BHEL\",\n  \"vacantSeats\": 2,\n  \"distanceKm\": 22.2\n}"
+            },
+            "url": "{{baseUrl}}/api/captains/{{captainId}}/routes"
+          }
+        },
+        {
+          "name": "Get Captain Routes",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/captains/{{captainId}}/routes"
+          }
+        },
+        {
+          "name": "Match Captain Route",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/captain-routes?from=Ameerpet&to=BHEL"
+          }
+        },
+        {
+          "name": "Search Rider Route",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/rider-routes/search?pickup=Ameerpet&destination=BHEL&seats=1"
+          }
+        },
+        {
+          "name": "Route Distance",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/routes/distance?from=Ameerpet&to=BHEL"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ride Requests",
+      "item": [
+        {
+          "name": "Create Rider Request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"riderId\": \"{{riderId}}\",\n  \"captainId\": \"{{captainId}}\",\n  \"routeId\": \"{{routeId}}\",\n  \"pickup\": \"Ameerpet\",\n  \"destination\": \"BHEL\",\n  \"hopPickup\": \"Ameerpet\",\n  \"hopDestination\": \"BHEL\",\n  \"distanceKm\": 22.2\n}"
+            },
+            "url": "{{baseUrl}}/api/rider-requests"
+          }
+        },
+        {
+          "name": "Get Captain Requests",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/captains/{{captainId}}/requests"
+          }
+        },
+        {
+          "name": "Get Rider Requests",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/riders/{{riderId}}/requests"
+          }
+        },
+        {
+          "name": "Accept Rider Request",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"accepted\",\n  \"captainMessage\": \"I received your request. Please wait near the pickup hub.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/captain/requests/{{requestId}}"
+          }
+        },
+        {
+          "name": "Decline Rider Request",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"declined\",\n  \"captainMessage\": \"Sorry, I cannot take this rider now.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/captain/requests/{{requestId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ride Status Payment Review",
+      "item": [
+        {
+          "name": "Start Ride",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ride-started\"\n}"
+            },
+            "url": "{{baseUrl}}/api/rides/{{requestId}}/status"
+          }
+        },
+        {
+          "name": "End Ride",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ride-completed\"\n}"
+            },
+            "url": "{{baseUrl}}/api/rides/{{requestId}}/status"
+          }
+        },
+        {
+          "name": "Payment Update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestId\": \"{{requestId}}\",\n  \"amount\": 88,\n  \"method\": \"UPI\"\n}"
+            },
+            "url": "{{baseUrl}}/api/payments"
+          }
+        },
+        {
+          "name": "Review Submit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestId\": \"{{requestId}}\",\n  \"riderId\": \"{{riderId}}\",\n  \"captainId\": \"{{captainId}}\",\n  \"rating\": 5,\n  \"mood\": \"happy\",\n  \"comment\": \"Safe and helpful ride.\"\n}"
+            },
+            "url": "{{baseUrl}}/api/reviews"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Location Hubs",
+      "item": [
+        {
+          "name": "Get Location Hubs",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/locations?limit=50"
+          }
+        },
+        {
+          "name": "Search Location Hubs",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/locations?search=Ameerpet&limit=20"
+          }
+        },
+        {
+          "name": "Create Location Hub",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Demo Pickup Hub\",\n  \"area\": \"Ameerpet\",\n  \"type\": \"Bus\",\n  \"pickupHint\": \"Safe demo pickup point\",\n  \"lat\": 17.4375,\n  \"lng\": 78.4483\n}"
+            },
+            "url": "{{baseUrl}}/api/locations"
+          }
+        }
+      ]
+    }
+  ]
+}

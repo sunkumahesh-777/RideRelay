@@ -21,6 +21,19 @@ Step 3 completed:
 - PostgreSQL schema added.
 - Hyderabad pickup hub seed file added.
 
+Step 4 completed:
+
+- Postman API collection added.
+- Postman local environment added.
+
+Step 5 completed:
+
+- Admin process document added.
+
+Step 6 completed:
+
+- Deployment guide added.
+
 ## Current Folder Structure
 
 Current project path:
@@ -36,6 +49,7 @@ RideRelay/
 ├── database/
 ├── docs/
 ├── frontend/
+├── postman/
 ├── .gitignore
 ├── README.md
 └── vercel.json
@@ -124,6 +138,38 @@ Completed APIs:
 - Location hubs API
 - Route distance API
 
+## Postman Status
+
+API testing files added:
+
+```text
+postman/
+├── RideRelay.postman_collection.json
+└── RideRelay.environment.json
+```
+
+Import both files into Postman and select the `RideRelay Local` environment.
+
+## Admin Process Status
+
+Admin process document added:
+
+```text
+docs/Admin-Process.md
+```
+
+It covers verification, reports, fake seat counts, route mismatch, payments, reviews, safety reports, and future admin APIs.
+
+## Deployment Guide Status
+
+Deployment guide added:
+
+```text
+docs/Deployment-Guide.md
+```
+
+It covers local run, GitHub Pages, Vercel, backend hosting, database hosting, and production checklist.
+
 ## Database Status
 
 Production database design added:
@@ -173,7 +219,8 @@ This means:
 Next work can be:
 
 ```text
-Phase 4: Add Postman API collection
-Phase 5: Add admin process
-Phase 6: Add deployment guide
+Phase 7: Create admin dashboard frontend
+Phase 8: Connect backend to PostgreSQL
+Phase 9: Add API automation tests
+Phase 10: Add mobile app folder when needed
 ```

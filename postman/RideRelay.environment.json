@@ -1,0 +1,30 @@
+{
+  "name": "RideRelay Local",
+  "values": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000",
+      "enabled": true
+    },
+    {
+      "key": "riderId",
+      "value": "RID-01b5b473",
+      "enabled": true
+    },
+    {
+      "key": "captainId",
+      "value": "CAP-6dbf4b61",
+      "enabled": true
+    },
+    {
+      "key": "routeId",
+      "value": "ROUTE-9871e3f2",
+      "enabled": true
+    },
+    {
+      "key": "requestId",
+      "value": "REQ-e1be72d7",
+      "enabled": true
+    }
+  ]
+}
