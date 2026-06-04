@@ -1,4 +1,5 @@
 const http = require('http');
+const crypto = require('crypto');
 const { URL } = require('url');
 const {
   readDb,
@@ -18,6 +19,8 @@ const {
 
 const PORT = Number(process.env.PORT || 4000);
 const RATE_PER_KM = 10;
+const AUTH_SECRET = process.env.JWT_SECRET || 'riderelay-local-demo-secret';
+const PASSWORD_ITERATIONS = 120000;
 
 seedDb();
 
@@ -62,8 +65,47 @@ function cleanUser(user) {
     return null;
   }
 
-  const { password, ...safeUser } = user;
+  const {
+    password,
+    passwordHash,
+    passwordSalt,
+    ...safeUser
+  } = user;
   return safeUser;
+}
+
+function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  const hash = crypto
+    .pbkdf2Sync(String(password), salt, PASSWORD_ITERATIONS, 64, 'sha512')
+    .toString('hex');
+
+  return { passwordHash: hash, passwordSalt: salt };
+}
+
+function verifyPassword(password, user) {
+  if (user.passwordHash && user.passwordSalt) {
+    const { passwordHash } = hashPassword(password, user.passwordSalt);
+    return crypto.timingSafeEqual(Buffer.from(passwordHash, 'hex'), Buffer.from(user.passwordHash, 'hex'));
+  }
+
+  // Temporary support for existing local demo users. Successful login upgrades them to hashed storage.
+  return user.password === password;
+}
+
+function createAuthToken(user) {
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({
+    sub: user.id,
+    role: user.role,
+    email: user.email,
+    iat: Math.floor(Date.now() / 1000)
+  })).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', AUTH_SECRET)
+    .update(`${header}.${payload}`)
+    .digest('base64url');
+
+  return `${header}.${payload}.${signature}`;
 }
 
 function normalize(value = '') {
@@ -388,7 +430,7 @@ async function handleRequest(req, res) {
         fullName: body.fullName,
         email: body.email,
         phone: body.phone,
-        password: body.password,
+        ...hashPassword(body.password),
         status: 'pending-verification',
         createdAt: now()
       };
@@ -451,18 +493,22 @@ async function handleRequest(req, res) {
       const body = await parseBody(req);
       const user = db.users.find((item) => (
         normalize(item.email) === normalize(body.email)
-        && item.password === body.password
       ));
 
-      if (!user) {
+      if (!user || !verifyPassword(body.password, user)) {
         sendJson(res, 401, { error: 'Invalid email or password' });
         return;
+      }
+
+      if (!user.passwordHash || !user.passwordSalt) {
+        Object.assign(user, hashPassword(body.password));
+        delete user.password;
       }
 
       audit(db, 'auth.login', { userId: user.id });
       writeDb(db);
       sendJson(res, 200, {
-        token: `demo-token-${user.id}`,
+        token: createAuthToken(user),
         user: cleanUser(user),
         profile: getRoleProfile(db, user)
       });

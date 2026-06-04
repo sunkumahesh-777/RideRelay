@@ -54,6 +54,15 @@ function audit(db, action, payload = {}) {
   db.auditLogs = db.auditLogs.slice(0, 200);
 }
 
+function hashSeedPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
+  return {
+    passwordHash: crypto
+      .pbkdf2Sync(String(password), salt, 120000, 64, 'sha512')
+      .toString('hex'),
+    passwordSalt: salt
+  };
+}
+
 function seedDb() {
   const db = readDb();
 
@@ -74,7 +83,7 @@ function seedDb() {
       fullName: 'Ananya Rao',
       email: 'ananya@riderelay.in',
       phone: '+91 98765 43210',
-      password: 'demo123',
+      ...hashSeedPassword('demo123'),
       status: 'verified',
       createdAt: now()
     },
@@ -84,7 +93,7 @@ function seedDb() {
       fullName: 'Rahul Captain',
       email: 'rahul.captain@riderelay.in',
       phone: '+91 90000 12345',
-      password: 'captain123',
+      ...hashSeedPassword('captain123'),
       status: 'verified',
       createdAt: now()
     }
