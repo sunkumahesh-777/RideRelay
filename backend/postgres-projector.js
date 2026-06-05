@@ -110,13 +110,20 @@ async function projectProfiles(client, db) {
 }
 
 async function projectLocations(client, db) {
+  const seenNames = new Map();
+
   for (const location of db.locations || []) {
     if (!Number.isFinite(Number(location.lat)) || !Number.isFinite(Number(location.lng))) continue;
+    const nameKey = `${location.name}`.trim().toLowerCase() + '|' + `${location.area}`.trim().toLowerCase();
+    const occurrence = (seenNames.get(nameKey) || 0) + 1;
+    seenNames.set(nameKey, occurrence);
+    const projectedName = occurrence === 1 ? location.name : `${location.name} - Pin ${occurrence}`;
+
     await client.query(`
       UPDATE pickup_hubs SET source_id=$1, updated_at=NOW()
       WHERE source_id IS NULL AND LOWER(name)=LOWER($2) AND LOWER(area)=LOWER($3)
         AND NOT EXISTS (SELECT 1 FROM pickup_hubs existing WHERE existing.source_id=$1)
-    `, [location.id, location.name, location.area]);
+    `, [location.id, projectedName, location.area]);
     await client.query(`
       INSERT INTO pickup_hubs (
         id, source_id, name, area, hub_type, pickup_hint, latitude, longitude,
@@ -128,7 +135,7 @@ async function projectLocations(client, db) {
         longitude=EXCLUDED.longitude, safety_radius_meters=EXCLUDED.safety_radius_meters,
         city=EXCLUDED.city, status=EXCLUDED.status, priority=EXCLUDED.priority, updated_at=NOW()
     `, [
-      stableUuid('hub', location.id), location.id, location.name, location.area,
+      stableUuid('hub', location.id), location.id, projectedName, location.area,
       location.type || 'Hub', location.pickupHint || null, Number(location.lat), Number(location.lng),
       Number(location.safetyRadiusMeters || 500), location.city || 'Hyderabad',
       location.status || 'active', Number(location.priority || 100),

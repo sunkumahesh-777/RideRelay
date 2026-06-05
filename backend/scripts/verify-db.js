@@ -30,8 +30,8 @@ const collections = [
 ];
 
 function compareCollection(name, localItems, postgresItems) {
-  const localIds = new Set(localItems.map((item) => item.id));
-  const postgresIds = new Set(postgresItems.map((item) => item.id));
+  const localIds = new Set(localItems.map((item) => String(item.id)));
+  const postgresIds = new Set(postgresItems.map((item) => String(item.id)));
   return {
     name,
     localCount: localItems.length,
