@@ -93,12 +93,14 @@ function verifyPassword(password, user) {
 }
 
 function createAuthToken(user) {
+  const issuedAt = Math.floor(Date.now() / 1000);
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const payload = Buffer.from(JSON.stringify({
     sub: user.id,
     role: user.role,
     email: user.email,
-    iat: Math.floor(Date.now() / 1000)
+    iat: issuedAt,
+    exp: issuedAt + (24 * 60 * 60)
   })).toString('base64url');
   const signature = crypto
     .createHmac('sha256', AUTH_SECRET)
@@ -106,6 +108,97 @@ function createAuthToken(user) {
     .digest('base64url');
 
   return `${header}.${payload}.${signature}`;
+}
+
+function verifyAuthToken(token) {
+  try {
+    const [header, payload, signature] = String(token || '').split('.');
+
+    if (!header || !payload || !signature) {
+      return null;
+    }
+
+    const expectedSignature = crypto
+      .createHmac('sha256', AUTH_SECRET)
+      .update(`${header}.${payload}`)
+      .digest('base64url');
+    const receivedBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expectedSignature);
+
+    if (
+      receivedBuffer.length !== expectedBuffer.length
+      || !crypto.timingSafeEqual(receivedBuffer, expectedBuffer)
+    ) {
+      return null;
+    }
+
+    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+
+    if (!claims.sub || !claims.exp || claims.exp <= Math.floor(Date.now() / 1000)) {
+      return null;
+    }
+
+    return claims;
+  } catch {
+    return null;
+  }
+}
+
+function getAuthenticatedUser(req, db) {
+  const authorization = req.headers.authorization || '';
+  const [scheme, token] = authorization.split(' ');
+
+  if (scheme !== 'Bearer' || !token) {
+    return null;
+  }
+
+  const claims = verifyAuthToken(token);
+  return claims ? findById(db.users, claims.sub) : null;
+}
+
+function isPublicRoute(method, path) {
+  return (
+    (method === 'GET' && [
+      '/api/health',
+      '/api/locations',
+      '/api/captain-routes',
+      '/api/routes/distance',
+      '/api/rider-routes/search'
+    ].includes(path))
+    || (method === 'POST' && ['/api/auth/signup', '/api/auth/login'].includes(path))
+  );
+}
+
+function canManageProfile(db, authUser, role, profileId) {
+  if (authUser?.role === 'admin') {
+    return true;
+  }
+
+  const profiles = role === 'captain' ? db.captains : db.riders;
+  return profiles.some((profile) => profile.id === profileId && profile.userId === authUser?.id);
+}
+
+function getRequestAccess(db, authUser, request) {
+  if (!authUser || !request) {
+    return null;
+  }
+
+  if (authUser.role === 'admin') {
+    return 'admin';
+  }
+
+  const rider = findById(db.riders, request.riderId);
+  const captain = findById(db.captains, request.captainId);
+
+  if (rider?.userId === authUser.id) {
+    return 'rider';
+  }
+
+  if (captain?.userId === authUser.id) {
+    return 'captain';
+  }
+
+  return null;
 }
 
 function normalize(value = '') {
@@ -248,8 +341,14 @@ async function handleRequest(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const path = url.pathname;
   const db = readDb();
+  const authUser = isPublicRoute(req.method, path) ? null : getAuthenticatedUser(req, db);
 
   try {
+    if (!isPublicRoute(req.method, path) && !authUser) {
+      sendJson(res, 401, { error: 'Valid login token required' });
+      return;
+    }
+
     if (req.method === 'GET' && path === '/api/health') {
       sendJson(res, 200, {
         ok: true,
@@ -285,6 +384,11 @@ async function handleRequest(req, res) {
     }
 
     if (req.method === 'POST' && path === '/api/locations') {
+      if (authUser.role !== 'admin') {
+        sendJson(res, 403, { error: 'Admin access required' });
+        return;
+      }
+
       const body = await parseBody(req);
       const result = createLocation(body);
 
@@ -300,6 +404,11 @@ async function handleRequest(req, res) {
     const locationParams = routeMatches(path, '/api/locations/:id');
 
     if (locationParams && req.method === 'PATCH') {
+      if (authUser.role !== 'admin') {
+        sendJson(res, 403, { error: 'Admin access required' });
+        return;
+      }
+
       const body = await parseBody(req);
       const result = updateLocation(locationParams.id, body);
 
@@ -518,12 +627,22 @@ async function handleRequest(req, res) {
     const captainProfileParams = routeMatches(path, '/api/captains/:captainId/profile');
 
     if (captainProfileParams && req.method === 'GET') {
+      if (!canManageProfile(db, authUser, 'captain', captainProfileParams.captainId)) {
+        sendJson(res, 403, { error: 'Captain profile access denied' });
+        return;
+      }
+
       const captain = findById(db.captains, captainProfileParams.captainId);
       sendJson(res, captain ? 200 : 404, captain || { error: 'Captain not found' });
       return;
     }
 
     if (captainProfileParams && req.method === 'PATCH') {
+      if (!canManageProfile(db, authUser, 'captain', captainProfileParams.captainId)) {
+        sendJson(res, 403, { error: 'Captain profile access denied' });
+        return;
+      }
+
       const body = await parseBody(req);
       const captain = findById(db.captains, captainProfileParams.captainId);
 
@@ -548,12 +667,22 @@ async function handleRequest(req, res) {
     const riderProfileParams = routeMatches(path, '/api/riders/:riderId/profile');
 
     if (riderProfileParams && req.method === 'GET') {
+      if (!canManageProfile(db, authUser, 'rider', riderProfileParams.riderId)) {
+        sendJson(res, 403, { error: 'Rider profile access denied' });
+        return;
+      }
+
       const rider = findById(db.riders, riderProfileParams.riderId);
       sendJson(res, rider ? 200 : 404, rider || { error: 'Rider not found' });
       return;
     }
 
     if (riderProfileParams && req.method === 'PATCH') {
+      if (!canManageProfile(db, authUser, 'rider', riderProfileParams.riderId)) {
+        sendJson(res, 403, { error: 'Rider profile access denied' });
+        return;
+      }
+
       const body = await parseBody(req);
       const rider = findById(db.riders, riderProfileParams.riderId);
 
@@ -577,6 +706,11 @@ async function handleRequest(req, res) {
     const captainPaymentParams = routeMatches(path, '/api/captains/:captainId/payment');
 
     if (captainPaymentParams && req.method === 'PATCH') {
+      if (!canManageProfile(db, authUser, 'captain', captainPaymentParams.captainId)) {
+        sendJson(res, 403, { error: 'Captain payment details access denied' });
+        return;
+      }
+
       const body = await parseBody(req);
       const captain = findById(db.captains, captainPaymentParams.captainId);
 
@@ -605,11 +739,21 @@ async function handleRequest(req, res) {
     const captainRouteParams = routeMatches(path, '/api/captains/:captainId/routes');
 
     if (captainRouteParams && req.method === 'GET') {
+      if (!canManageProfile(db, authUser, 'captain', captainRouteParams.captainId)) {
+        sendJson(res, 403, { error: 'Captain route access denied' });
+        return;
+      }
+
       sendJson(res, 200, db.captainRoutes.filter((route) => route.captainId === captainRouteParams.captainId));
       return;
     }
 
     if (captainRouteParams && req.method === 'POST') {
+      if (!canManageProfile(db, authUser, 'captain', captainRouteParams.captainId)) {
+        sendJson(res, 403, { error: 'Captain route access denied' });
+        return;
+      }
+
       const body = await parseBody(req);
       const captain = findById(db.captains, captainRouteParams.captainId);
       const missing = requireFields(body, ['fromLocation', 'toLocation', 'vacantSeats', 'distanceKm']);
@@ -652,6 +796,11 @@ async function handleRequest(req, res) {
     const captainDashboardParams = routeMatches(path, '/api/captains/:captainId/dashboard');
 
     if (captainDashboardParams && req.method === 'PATCH') {
+      if (!canManageProfile(db, authUser, 'captain', captainDashboardParams.captainId)) {
+        sendJson(res, 403, { error: 'Captain dashboard access denied' });
+        return;
+      }
+
       const body = await parseBody(req);
       const captain = findById(db.captains, captainDashboardParams.captainId);
 
@@ -674,6 +823,11 @@ async function handleRequest(req, res) {
     const captainRequestsParams = routeMatches(path, '/api/captains/:captainId/requests');
 
     if (captainRequestsParams && req.method === 'GET') {
+      if (!canManageProfile(db, authUser, 'captain', captainRequestsParams.captainId)) {
+        sendJson(res, 403, { error: 'Captain request access denied' });
+        return;
+      }
+
       sendJson(res, 200, db.rideRequests
         .filter((request) => request.captainId === captainRequestsParams.captainId)
         .map((request) => enrichRequest(db, request)));
@@ -683,6 +837,11 @@ async function handleRequest(req, res) {
     const riderRequestsParams = routeMatches(path, '/api/riders/:riderId/requests');
 
     if (riderRequestsParams && req.method === 'GET') {
+      if (!canManageProfile(db, authUser, 'rider', riderRequestsParams.riderId)) {
+        sendJson(res, 403, { error: 'Rider request access denied' });
+        return;
+      }
+
       sendJson(res, 200, db.rideRequests
         .filter((request) => request.riderId === riderRequestsParams.riderId)
         .map((request) => enrichRequest(db, request)));
@@ -695,6 +854,11 @@ async function handleRequest(req, res) {
 
       if (missing.length) {
         sendJson(res, 400, { error: 'Missing required fields', missing });
+        return;
+      }
+
+      if (!canManageProfile(db, authUser, 'rider', body.riderId)) {
+        sendJson(res, 403, { error: 'Rider request creation denied' });
         return;
       }
 
@@ -739,6 +903,12 @@ async function handleRequest(req, res) {
         return;
       }
 
+      const requestAccess = getRequestAccess(db, authUser, request);
+      if (!['captain', 'admin'].includes(requestAccess)) {
+        sendJson(res, 403, { error: 'Only the assigned Captain can decide this request' });
+        return;
+      }
+
       const allowedStatuses = ['accepted', 'declined', 'location-alert'];
       if (!allowedStatuses.includes(body.status)) {
         sendJson(res, 400, { error: `Status must be one of ${allowedStatuses.join(', ')}` });
@@ -768,6 +938,16 @@ async function handleRequest(req, res) {
       const allowedStatuses = ['present-at-pickup', 'ride-started', 'ride-completed'];
       if (!allowedStatuses.includes(body.status)) {
         sendJson(res, 400, { error: `Status must be one of ${allowedStatuses.join(', ')}` });
+        return;
+      }
+
+      const requestAccess = getRequestAccess(db, authUser, request);
+      const canUpdateStatus = requestAccess === 'admin'
+        || (body.status === 'present-at-pickup' && requestAccess === 'rider')
+        || (['ride-started', 'ride-completed'].includes(body.status) && requestAccess === 'captain');
+
+      if (!canUpdateStatus) {
+        sendJson(res, 403, { error: 'Ride status update denied for this user' });
         return;
       }
 
@@ -809,6 +989,11 @@ async function handleRequest(req, res) {
         return;
       }
 
+      if (!['rider', 'admin'].includes(getRequestAccess(db, authUser, request))) {
+        sendJson(res, 403, { error: 'Only the assigned Rider can complete payment' });
+        return;
+      }
+
       const payment = {
         id: createId('PAY'),
         requestId: request.id,
@@ -837,6 +1022,17 @@ async function handleRequest(req, res) {
 
       if (missing.length) {
         sendJson(res, 400, { error: 'Missing required fields', missing });
+        return;
+      }
+
+      const reviewRequest = findById(db.rideRequests, body.requestId);
+      if (
+        !reviewRequest
+        || reviewRequest.riderId !== body.riderId
+        || reviewRequest.captainId !== body.captainId
+        || !['rider', 'admin'].includes(getRequestAccess(db, authUser, reviewRequest))
+      ) {
+        sendJson(res, 403, { error: 'Review submission denied for this ride' });
         return;
       }
 

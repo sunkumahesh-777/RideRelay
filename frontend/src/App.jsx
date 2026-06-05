@@ -21,6 +21,15 @@ function getStoredSession() {
   }
 }
 
+function getStoredApiToken() {
+  try {
+    const storedSession = getStoredSession();
+    return storedSession ? JSON.parse(storedSession)?.token || '' : '';
+  } catch {
+    return '';
+  }
+}
+
 function setStoredSession(session) {
   try {
     window.localStorage?.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
@@ -896,10 +905,12 @@ const apiPreview = {
 };
 
 async function apiRequest(path, options = {}) {
+  const token = getStoredApiToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {})
     }
   });
