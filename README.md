@@ -98,6 +98,7 @@ cd backend
 copy .env.example .env
 npm run db:migrate
 npm run db:project
+npm run db:verify
 npm run db:status
 npm start
 ```
@@ -157,5 +158,6 @@ GET /api/bootstrap
 PostgreSQL connection, migrations, normalized tables, production constraints,
 Hyderabad hub seeds, durable compatibility storage, and automatic normalized
 projection are ready. Current working data is projected into relational tables
-after every successful save. The next database step is switching API reads from
-compatibility storage to those normalized PostgreSQL tables.
+after every successful save. Set `DB_READ_MODE=normalized` only after
+`npm run db:verify` reports a complete match. The next database step is replacing
+whole-state reads with focused repository queries for each API domain.

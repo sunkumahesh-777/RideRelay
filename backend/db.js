@@ -2,10 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { projectNormalizedState } = require('./postgres-projector');
+const { readNormalizedState } = require('./postgres-reader');
 
 const dataDir = path.join(__dirname, 'data');
 const dbPath = path.join(dataDir, 'riderelay-db.json');
 const databaseUrl = process.env.DATABASE_URL || '';
+const databaseReadMode = process.env.DB_READ_MODE === 'normalized' ? 'normalized' : 'compatibility';
 let cachedDb = null;
 let postgresPool = null;
 let persistenceQueue = Promise.resolve();
@@ -69,7 +71,7 @@ async function initializeDb() {
 
   if (!databaseUrl) {
     cachedDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-    return { driver: 'json', connected: true };
+    return { driver: 'json', connected: true, readMode: 'compatibility' };
   }
 
   const { Pool } = require('pg');
@@ -102,7 +104,17 @@ async function initializeDb() {
   }
 
   const projection = await projectNormalizedState(postgresPool, cachedDb);
-  return { driver: 'postgresql', connected: true, projection };
+  if (databaseReadMode === 'normalized') {
+    cachedDb = await readNormalizedState(postgresPool);
+    fs.writeFileSync(dbPath, JSON.stringify(cachedDb, null, 2));
+  }
+
+  return {
+    driver: 'postgresql',
+    connected: true,
+    readMode: databaseReadMode,
+    projection
+  };
 }
 
 async function flushDb() {

@@ -10,6 +10,7 @@
     "db:migrate": "node scripts/migrate.js",
     "db:project": "node scripts/project-db.js",
     "db:status": "node scripts/db-status.js",
+    "db:verify": "node scripts/verify-db.js",
     "check": "node --check server.js"
   },
   "dependencies": {

@@ -33,6 +33,7 @@ Promise.all([
     console.log(JSON.stringify({
       connected: true,
       driver: 'postgresql',
+      readMode: process.env.DB_READ_MODE === 'normalized' ? 'normalized' : 'compatibility',
       ...databaseResult.rows[0],
       projection: projectionResult.rows[0] || {
         projected: false,

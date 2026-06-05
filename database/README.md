@@ -49,11 +49,30 @@ API behavior while the normalized tables are connected route-by-route.
 3. Set `DATABASE_URL`.
 4. From `backend/`, run `npm run db:migrate`.
 5. Run `npm run db:project` to project existing RideRelay data.
-6. Check the result with `npm run db:status`.
-7. Start the API with `npm start`.
+6. Run `npm run db:verify` and confirm `"matches": true`.
+7. Check the connection with `npm run db:status`.
+8. Start the API with `npm start`.
 
 The migration command records applied schema, migration, and seed files in
 `schema_migrations`, so it is safe to run again.
+
+## Safe PostgreSQL Read Cutover
+
+Keep this setting during migration:
+
+```text
+DB_READ_MODE=compatibility
+```
+
+After `npm run db:verify` reports that all collections match, change it to:
+
+```text
+DB_READ_MODE=normalized
+```
+
+On startup, RideRelay projects the latest durable state first and then rebuilds
+the working API state from normalized PostgreSQL tables. If required relational
+records are incomplete, startup stops instead of silently losing data.
 
 ## Migration Progress
 
@@ -62,4 +81,5 @@ The migration command records applied schema, migration, and seed files in
 - Hyderabad pickup hub seed: completed.
 - Automatic normalized projection for users, profiles, hubs, trips, requests,
   payments, reviews, and audit logs: completed.
-- API-by-API reads from normalized tables: next phase.
+- Controlled normalized PostgreSQL read mode and cutover verification: completed.
+- Direct repository queries per API domain: next phase.

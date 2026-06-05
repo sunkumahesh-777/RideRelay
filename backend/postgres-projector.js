@@ -92,18 +92,19 @@ async function projectProfiles(client, db) {
     await client.query(`
       INSERT INTO captain_payment_details (
         id, source_id, captain_id, account_holder, bank_name, account_number_masked,
-        ifsc_code, upi_id, qr_file_url, qr_mime_type, created_at, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+        ifsc_code, upi_id, qr_file_url, qr_mime_type, metadata, created_at, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,NOW())
       ON CONFLICT (source_id) DO UPDATE SET
         account_holder=EXCLUDED.account_holder, bank_name=EXCLUDED.bank_name,
         account_number_masked=EXCLUDED.account_number_masked, ifsc_code=EXCLUDED.ifsc_code,
         upi_id=EXCLUDED.upi_id, qr_file_url=EXCLUDED.qr_file_url,
-        qr_mime_type=EXCLUDED.qr_mime_type, updated_at=NOW()
+        qr_mime_type=EXCLUDED.qr_mime_type, metadata=EXCLUDED.metadata, updated_at=NOW()
     `, [
       stableUuid('captain-payment', captain.id), captain.id, stableUuid('captain', captain.id),
       bank.accountHolder || captain.fullName || null, bank.bankName || null,
       bank.accountNumber || null, bank.ifsc || null, bank.upiId || null,
-      bank.qrDataUrl || null, bank.qrMimeType || null, timestamp(captain.createdAt)
+      bank.qrDataUrl || null, bank.qrMimeType || null,
+      JSON.stringify({ qrFileName: bank.qrFileName || '' }), timestamp(captain.createdAt)
     ]);
   }
 }
@@ -114,6 +115,7 @@ async function projectLocations(client, db) {
     await client.query(`
       UPDATE pickup_hubs SET source_id=$1, updated_at=NOW()
       WHERE source_id IS NULL AND LOWER(name)=LOWER($2) AND LOWER(area)=LOWER($3)
+        AND NOT EXISTS (SELECT 1 FROM pickup_hubs existing WHERE existing.source_id=$1)
     `, [location.id, location.name, location.area]);
     await client.query(`
       INSERT INTO pickup_hubs (
