@@ -65,13 +65,15 @@ The finished website files will be created in the `frontend/dist` folder.
 
 ## Run the Backend API
 
-RideRelay now includes a starter backend API using Node.js and a local JSON database.
+RideRelay includes a Node.js API with PostgreSQL support and an automatic local
+JSON fallback.
 
 Start the API server:
 
 ```bash
-cd frontend
-npm run api
+cd backend
+npm install
+npm start
 ```
 
 The backend runs at:
@@ -86,7 +88,26 @@ Health check:
 GET http://localhost:4000/api/health
 ```
 
-The local database is created automatically at `backend/data/riderelay-db.json`. This file is ignored by Git because it is local demo data.
+Without `DATABASE_URL`, the local database is created automatically at
+`backend/data/riderelay-db.json`. This file is ignored by Git.
+
+For PostgreSQL:
+
+```bash
+cd backend
+copy .env.example .env
+npm run db:migrate
+npm run db:status
+npm start
+```
+
+Update `DATABASE_URL` inside `.env` before running the migration. The health API
+shows the active storage driver:
+
+```text
+GET /api/health
+storage.driver = json | postgresql
+```
 
 ## Backend API Routes
 
@@ -130,6 +151,9 @@ Demo data:
 GET /api/bootstrap
 ```
 
-## Future Real Database Upgrade
+## Database Migration Status
 
-This first backend uses a local JSON database so development is easy. For production, replace it with PostgreSQL or MongoDB and store uploaded QR files in cloud storage such as S3, Firebase Storage, or Cloudinary.
+PostgreSQL connection, migrations, normalized tables, production constraints,
+Hyderabad hub seeds, and durable compatibility storage are ready. The next
+database step is converting each API domain from compatibility storage to its
+normalized PostgreSQL tables.

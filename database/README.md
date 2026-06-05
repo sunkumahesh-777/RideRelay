@@ -1,6 +1,6 @@
 # RideRelay Database
 
-This folder contains the future production database design for RideRelay.
+This folder contains the production PostgreSQL database design for RideRelay.
 
 ## Current Files
 
@@ -30,21 +30,32 @@ Use PostgreSQL for production because RideRelay has structured data:
 - Eco points
 - Monthly impact
 
-## Current Prototype Database
+## Storage Modes
 
-The current backend still uses:
+The backend supports two storage modes:
 
 ```text
-backend/data/riderelay-db.json
+Without DATABASE_URL  -> backend/data/riderelay-db.json
+With DATABASE_URL     -> PostgreSQL app_state + local JSON backup
 ```
 
-That file is local demo data and is ignored by Git.
+The compatibility `app_state` document preserves all current Rider and Captain
+API behavior while the normalized tables are connected route-by-route.
 
-## Future Migration Plan
+## Local PostgreSQL Setup
 
-1. Create PostgreSQL database.
-2. Run `database/schema.sql`.
-3. Run seed files from `database/seed/`.
-4. Replace JSON database logic in `backend/db.js` with PostgreSQL queries.
-5. Keep the same API routes.
+1. Install PostgreSQL and create a database named `riderelay`.
+2. Copy the values from `backend/.env.example` into your environment.
+3. Set `DATABASE_URL`.
+4. From `backend/`, run `npm run db:migrate`.
+5. Start the API with `npm start`.
 
+The migration command records applied schema, migration, and seed files in
+`schema_migrations`, so it is safe to run again.
+
+## Migration Progress
+
+- PostgreSQL connection and durable compatibility storage: completed.
+- Normalized production schema: completed.
+- Hyderabad pickup hub seed: completed.
+- API-by-API conversion from compatibility storage to normalized tables: next phase.

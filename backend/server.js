@@ -1,7 +1,12 @@
+require('dotenv').config({ quiet: true });
+
 const http = require('http');
 const crypto = require('crypto');
 const { URL } = require('url');
 const {
+  initializeDb,
+  flushDb,
+  closeDb,
   readDb,
   writeDb,
   createId,
@@ -21,8 +26,7 @@ const PORT = Number(process.env.PORT || 4000);
 const RATE_PER_KM = 10;
 const AUTH_SECRET = process.env.JWT_SECRET || 'riderelay-local-demo-secret';
 const PASSWORD_ITERATIONS = 120000;
-
-seedDb();
+let storageStatus = { driver: 'starting', connected: false };
 
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, {
@@ -353,6 +357,7 @@ async function handleRequest(req, res) {
       sendJson(res, 200, {
         ok: true,
         service: 'RideRelay backend',
+        storage: storageStatus,
         time: now()
       });
       return;
@@ -590,7 +595,7 @@ async function handleRequest(req, res) {
       }
 
       audit(db, 'auth.signup', { userId: user.id, role: user.role });
-      writeDb(db);
+      await writeDb(db);
       sendJson(res, 201, {
         user: cleanUser(user),
         profile: getRoleProfile(db, user)
@@ -615,7 +620,7 @@ async function handleRequest(req, res) {
       }
 
       audit(db, 'auth.login', { userId: user.id });
-      writeDb(db);
+      await writeDb(db);
       sendJson(res, 200, {
         token: createAuthToken(user),
         user: cleanUser(user),
@@ -659,7 +664,7 @@ async function handleRequest(req, res) {
         licenseNumber: body.licenseNumber ?? captain.licenseNumber
       });
       audit(db, 'captain.profile.updated', { captainId: captain.id });
-      writeDb(db);
+      await writeDb(db);
       sendJson(res, 200, captain);
       return;
     }
@@ -698,7 +703,7 @@ async function handleRequest(req, res) {
         emergencyContact: body.emergencyContact ?? rider.emergencyContact
       });
       audit(db, 'rider.profile.updated', { riderId: rider.id });
-      writeDb(db);
+      await writeDb(db);
       sendJson(res, 200, rider);
       return;
     }
@@ -731,7 +736,7 @@ async function handleRequest(req, res) {
         qrDataUrl: body.qrDataUrl ?? captain.bank.qrDataUrl
       };
       audit(db, 'captain.payment.updated', { captainId: captain.id, qrFileName: captain.bank.qrFileName });
-      writeDb(db);
+      await writeDb(db);
       sendJson(res, 200, captain.bank);
       return;
     }
@@ -788,7 +793,7 @@ async function handleRequest(req, res) {
 
       db.captainRoutes.push(route);
       audit(db, 'captain.route.created', { captainId: captain.id, routeId: route.id });
-      writeDb(db);
+      await writeDb(db);
       sendJson(res, 201, route);
       return;
     }
@@ -815,7 +820,7 @@ async function handleRequest(req, res) {
         targetAmount: Number(body.targetAmount ?? captain.dashboard.targetAmount) || 0
       };
       audit(db, 'captain.dashboard.updated', { captainId: captain.id });
-      writeDb(db);
+      await writeDb(db);
       sendJson(res, 200, captain.dashboard);
       return;
     }
@@ -887,7 +892,7 @@ async function handleRequest(req, res) {
 
       db.rideRequests.push(request);
       audit(db, 'ride.request.created', { requestId: request.id });
-      writeDb(db);
+      await writeDb(db);
       sendJson(res, 201, request);
       return;
     }
@@ -919,7 +924,7 @@ async function handleRequest(req, res) {
       request.captainMessage = body.captainMessage ?? request.captainMessage;
       request.updatedAt = now();
       audit(db, 'ride.request.decision', { requestId: request.id, status: request.status });
-      writeDb(db);
+      await writeDb(db);
       sendJson(res, 200, request);
       return;
     }
@@ -969,7 +974,7 @@ async function handleRequest(req, res) {
       }
 
       audit(db, 'ride.status.updated', { requestId: request.id, status: request.status });
-      writeDb(db);
+      await writeDb(db);
       sendJson(res, 200, request);
       return;
     }
@@ -1011,7 +1016,7 @@ async function handleRequest(req, res) {
         captain.dashboard.earnedAmount += payment.amount;
       }
       audit(db, 'payment.created', { paymentId: payment.id, requestId: request.id });
-      writeDb(db);
+      await writeDb(db);
       sendJson(res, 201, payment);
       return;
     }
@@ -1058,7 +1063,7 @@ async function handleRequest(req, res) {
       }
 
       audit(db, 'review.created', { reviewId: review.id });
-      writeDb(db);
+      await writeDb(db);
       sendJson(res, 201, review);
       return;
     }
@@ -1069,6 +1074,28 @@ async function handleRequest(req, res) {
   }
 }
 
-http.createServer(handleRequest).listen(PORT, () => {
-  console.log(`RideRelay backend running at http://localhost:${PORT}`);
+async function startServer() {
+  storageStatus = await initializeDb();
+  seedDb();
+  await flushDb();
+
+  const server = http.createServer(handleRequest);
+  server.listen(PORT, () => {
+    console.log(`RideRelay backend running at http://localhost:${PORT} using ${storageStatus.driver}`);
+  });
+
+  const shutdown = async () => {
+    server.close(async () => {
+      await closeDb();
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
+
+startServer().catch((error) => {
+  console.error('RideRelay backend failed to start:', error.message);
+  process.exit(1);
 });

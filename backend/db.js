@@ -4,6 +4,10 @@ const crypto = require('crypto');
 
 const dataDir = path.join(__dirname, 'data');
 const dbPath = path.join(dataDir, 'riderelay-db.json');
+const databaseUrl = process.env.DATABASE_URL || '';
+let cachedDb = null;
+let postgresPool = null;
+let persistenceQueue = Promise.resolve();
 
 const initialDb = {
   users: [],
@@ -29,11 +33,83 @@ function ensureDb() {
 
 function readDb() {
   ensureDb();
-  return JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+  if (!cachedDb) {
+    cachedDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+  }
+  return cachedDb;
 }
 
 function writeDb(db) {
+  cachedDb = db;
   fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+
+  if (postgresPool) {
+    const operation = persistenceQueue.then(() => postgresPool.query(
+        `INSERT INTO app_state (state_key, payload, updated_at)
+         VALUES ('primary', $1::jsonb, NOW())
+         ON CONFLICT (state_key)
+         DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()`,
+        [JSON.stringify(db)]
+      ));
+    persistenceQueue = operation.catch((error) => {
+      console.error('PostgreSQL persistence failed:', error.message);
+    });
+    return operation;
+  }
+
+  return Promise.resolve();
+}
+
+async function initializeDb() {
+  ensureDb();
+
+  if (!databaseUrl) {
+    cachedDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    return { driver: 'json', connected: true };
+  }
+
+  const { Pool } = require('pg');
+  postgresPool = new Pool({
+    connectionString: databaseUrl,
+    ssl: process.env.PGSSL === 'require' ? { rejectUnauthorized: false } : false
+  });
+
+  await postgresPool.query(`
+    CREATE TABLE IF NOT EXISTS app_state (
+      state_key VARCHAR(80) PRIMARY KEY,
+      payload JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  const result = await postgresPool.query(
+    `SELECT payload FROM app_state WHERE state_key = 'primary'`
+  );
+
+  if (result.rows.length) {
+    cachedDb = result.rows[0].payload;
+    fs.writeFileSync(dbPath, JSON.stringify(cachedDb, null, 2));
+  } else {
+    cachedDb = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    await postgresPool.query(
+      `INSERT INTO app_state (state_key, payload) VALUES ('primary', $1::jsonb)`,
+      [JSON.stringify(cachedDb)]
+    );
+  }
+
+  return { driver: 'postgresql', connected: true };
+}
+
+async function flushDb() {
+  await persistenceQueue;
+}
+
+async function closeDb() {
+  await flushDb();
+  if (postgresPool) {
+    await postgresPool.end();
+    postgresPool = null;
+  }
 }
 
 function createId(prefix) {
@@ -174,6 +250,9 @@ function seedDb() {
 }
 
 module.exports = {
+  initializeDb,
+  flushDb,
+  closeDb,
   readDb,
   writeDb,
   createId,
