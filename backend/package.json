@@ -8,6 +8,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "db:migrate": "node scripts/migrate.js",
+    "db:project": "node scripts/project-db.js",
     "db:status": "node scripts/db-status.js",
     "check": "node --check server.js"
   },

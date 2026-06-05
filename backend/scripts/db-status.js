@@ -16,17 +16,28 @@ const pool = new Pool({
   ssl: process.env.PGSSL === 'require' ? { rejectUnauthorized: false } : false
 });
 
-pool.query(`
-  SELECT
-    current_database() AS database_name,
-    NOW() AS checked_at,
-    (SELECT COUNT(*)::int FROM information_schema.tables WHERE table_schema = 'public') AS table_count
-`)
-  .then(({ rows }) => {
+Promise.all([
+  pool.query(`
+    SELECT
+      current_database() AS database_name,
+      NOW() AS checked_at,
+      (SELECT COUNT(*)::int FROM information_schema.tables WHERE table_schema = 'public') AS table_count
+  `),
+  pool.query(`
+    SELECT projected_at, record_counts
+    FROM projection_status
+    WHERE projection_key = 'primary'
+  `).catch(() => ({ rows: [] }))
+])
+  .then(([databaseResult, projectionResult]) => {
     console.log(JSON.stringify({
       connected: true,
       driver: 'postgresql',
-      ...rows[0]
+      ...databaseResult.rows[0],
+      projection: projectionResult.rows[0] || {
+        projected: false,
+        message: 'No normalized projection found. Run migrations and start the API.'
+      }
     }, null, 2));
   })
   .catch((error) => {

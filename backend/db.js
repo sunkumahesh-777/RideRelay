@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { projectNormalizedState } = require('./postgres-projector');
 
 const dataDir = path.join(__dirname, 'data');
 const dbPath = path.join(dataDir, 'riderelay-db.json');
@@ -44,13 +45,16 @@ function writeDb(db) {
   fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
 
   if (postgresPool) {
-    const operation = persistenceQueue.then(() => postgresPool.query(
-        `INSERT INTO app_state (state_key, payload, updated_at)
-         VALUES ('primary', $1::jsonb, NOW())
-         ON CONFLICT (state_key)
-         DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()`,
-        [JSON.stringify(db)]
-      ));
+    const operation = persistenceQueue.then(async () => {
+      await postgresPool.query(
+          `INSERT INTO app_state (state_key, payload, updated_at)
+           VALUES ('primary', $1::jsonb, NOW())
+           ON CONFLICT (state_key)
+           DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()`,
+          [JSON.stringify(db)]
+        );
+      return projectNormalizedState(postgresPool, db);
+    });
     persistenceQueue = operation.catch((error) => {
       console.error('PostgreSQL persistence failed:', error.message);
     });
@@ -97,7 +101,8 @@ async function initializeDb() {
     );
   }
 
-  return { driver: 'postgresql', connected: true };
+  const projection = await projectNormalizedState(postgresPool, cachedDb);
+  return { driver: 'postgresql', connected: true, projection };
 }
 
 async function flushDb() {

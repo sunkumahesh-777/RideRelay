@@ -97,6 +97,7 @@ For PostgreSQL:
 cd backend
 copy .env.example .env
 npm run db:migrate
+npm run db:project
 npm run db:status
 npm start
 ```
@@ -154,6 +155,7 @@ GET /api/bootstrap
 ## Database Migration Status
 
 PostgreSQL connection, migrations, normalized tables, production constraints,
-Hyderabad hub seeds, and durable compatibility storage are ready. The next
-database step is converting each API domain from compatibility storage to its
-normalized PostgreSQL tables.
+Hyderabad hub seeds, durable compatibility storage, and automatic normalized
+projection are ready. Current working data is projected into relational tables
+after every successful save. The next database step is switching API reads from
+compatibility storage to those normalized PostgreSQL tables.
