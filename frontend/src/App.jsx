@@ -1,10 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import {
+  apiPreview,
+  apiRequest,
+  clearStoredSession,
+  getStoredSession,
+  setStoredSession
+} from './services/api';
+import { getCurrentUser, login, signup } from './services/authService';
+import {
+  createRiderRequest,
+  getCaptainRequests,
+  getCaptainRoutes,
+  getLocations,
+  searchRiderRoutes,
+  updateCaptainRequest as saveCaptainRequest,
+  updateRideStatus
+} from './services/rideService';
 
 const assetPath = (fileName) => `${import.meta.env.BASE_URL}${fileName}`;
-const SESSION_STORAGE_KEY = 'riderelay-session';
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
 const ACTIVE_CAPTAIN_REQUEST_STATUSES = ['accepted', 'present-at-pickup', 'ride-started'];
 const CAPTAIN_SHARE_RATE_PER_KM = 9;
 const PLATFORM_FEE = 5;
@@ -12,39 +27,6 @@ const RAPIDO_STYLE_RATE_PER_KM = 16;
 const WALKING_MINUTES_PER_KM = 12;
 const CALORIES_PER_WALKING_KM = 50;
 const CO2_KG_PER_KM_SHARED = 0.12;
-
-function getStoredSession() {
-  try {
-    return window.localStorage?.getItem(SESSION_STORAGE_KEY) || null;
-  } catch {
-    return null;
-  }
-}
-
-function getStoredApiToken() {
-  try {
-    const storedSession = getStoredSession();
-    return storedSession ? JSON.parse(storedSession)?.token || '' : '';
-  } catch {
-    return '';
-  }
-}
-
-function setStoredSession(session) {
-  try {
-    window.localStorage?.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-  } catch {
-    // Some embedded browsers restrict local storage; keep the app usable without it.
-  }
-}
-
-function clearStoredSession() {
-  try {
-    window.localStorage?.removeItem(SESSION_STORAGE_KEY);
-  } catch {
-    // Storage may be unavailable in restricted browser contexts.
-  }
-}
 
 const mapTileModes = {
   street: {
@@ -893,38 +875,6 @@ const initialCaptainRequests = [
     presence: 'not-confirmed'
   }
 ];
-
-const apiPreview = {
-  signup: 'POST /api/auth/signup',
-  login: 'POST /api/auth/login',
-  gmail: 'POST /api/auth/google',
-  captainRequests: 'GET /api/captain/requests',
-  captainDecision: 'PATCH /api/captain/requests/:id',
-  presence: 'POST /api/captain/presence',
-  rideStatus: 'PATCH /api/rides/:id/status'
-};
-
-async function apiRequest(path, options = {}) {
-  const token = getStoredApiToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {})
-    }
-  });
-  const payload = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const error = new Error(payload.error || `API request failed with ${response.status}`);
-    error.status = response.status;
-    error.payload = payload;
-    throw error;
-  }
-
-  return payload;
-}
 
 function getCaptainTargetMoney(distanceKm) {
   return Math.max(20, Math.round(distanceKm * CAPTAIN_SHARE_RATE_PER_KM));
@@ -1860,11 +1810,19 @@ export default function App() {
     const nextRole = role || (payload.user?.role === 'captain' ? 'Captain' : 'Rider');
     const profile = payload.profile || {};
     const user = payload.user || {};
-
-    setApiSession({
+    const nextSession = {
       token: payload.token || '',
       user,
       profile
+    };
+
+    setApiSession(nextSession);
+    setStoredSession({
+      appPage: nextRole === 'Captain' ? 'captain' : 'rider',
+      activePanel: nextRole === 'Captain' ? 'captain-dashboard' : 'home',
+      role: nextRole,
+      backendUserId: user.id || '',
+      ...nextSession
     });
 
     if (nextRole === 'Captain') {
@@ -1925,6 +1883,24 @@ export default function App() {
       const parsedSession = JSON.parse(savedSession);
 
       if (parsedSession.appPage === 'captain' || parsedSession.appPage === 'rider') {
+        if (parsedSession.token && parsedSession.user && parsedSession.profile) {
+          getCurrentUser()
+            .then((payload) => applyBackendSession({
+              ...payload,
+              token: parsedSession.token
+            }, parsedSession.role))
+            .catch(() => {
+              clearStoredSession();
+              setApiSession(null);
+              setAppPage('auth');
+              setAuthStatus('Your saved login expired. Please login again.');
+            });
+        } else {
+          clearStoredSession();
+          setAppPage('auth');
+          setAuthStatus('Please login to continue.');
+          return;
+        }
         setSignupRole(parsedSession.role || (parsedSession.appPage === 'captain' ? 'Captain' : 'Rider'));
         setActivePanel(parsedSession.activePanel || (parsedSession.appPage === 'captain' ? 'captain-dashboard' : 'home'));
         setAppPage(parsedSession.appPage);
@@ -1940,7 +1916,7 @@ export default function App() {
 
     const loadBackendLocations = async () => {
       try {
-        const payload = await apiRequest('/api/locations?limit=500');
+        const payload = await getLocations(500);
         const nextLocations = Array.isArray(payload.locations) ? payload.locations : [];
 
         if (!isMounted || !nextLocations.length) {
@@ -1973,7 +1949,10 @@ export default function App() {
       appPage,
       activePanel,
       role: appPage === 'captain' ? 'Captain' : 'Rider',
-      backendUserId: apiSession?.user?.id || ''
+      backendUserId: apiSession?.user?.id || '',
+      token: apiSession?.token || '',
+      user: apiSession?.user || null,
+      profile: apiSession?.profile || null
     });
   }, [appPage, activePanel, apiSession]);
 
@@ -2128,10 +2107,14 @@ export default function App() {
       setRouteOptions(options);
       setAlternateMatches(plan.length ? [] : alternates);
       try {
-        const backendRoutes = await apiRequest(`/api/captain-routes?from=${encodeURIComponent(routePickup)}&to=${encodeURIComponent(routeDestination)}`);
-        setBackendRouteMatches(backendRoutes);
-        setBackendStatus(backendRoutes.length
-          ? `${backendRoutes.length} backend Captain route${backendRoutes.length === 1 ? '' : 's'} available for this rider search.`
+        const backendSearch = await searchRiderRoutes({
+          pickup: routePickup,
+          destination: routeDestination,
+          seats: requiredSeats
+        });
+        setBackendRouteMatches(backendSearch.matches || []);
+        setBackendStatus(backendSearch.matches?.length
+          ? `${backendSearch.matches.length} allocated Captain route${backendSearch.matches.length === 1 ? '' : 's'} available for this rider search.`
           : 'No backend Captain route found for this rider search yet.');
       } catch (error) {
         setBackendRouteMatches([]);
@@ -2389,7 +2372,7 @@ export default function App() {
   };
 
   const getBackendRouteForRide = async (from, to) => {
-    const routeMatches = await apiRequest(`/api/captain-routes?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+    const routeMatches = await getCaptainRoutes({ from, to });
     const activeRoute = routeMatches[0];
 
     if (activeRoute) {
@@ -2410,18 +2393,16 @@ export default function App() {
         return null;
       }
 
-      const request = await apiRequest('/api/rider-requests', {
-        method: 'POST',
-        body: JSON.stringify({
-          riderId,
-          captainId: route.captainId,
-          routeId: route.id,
-          pickup: from,
-          destination: to,
-          hopPickup: hopPickup || from,
-          hopDestination: hopDestination || to,
-          distanceKm
-        })
+      const request = await createRiderRequest({
+        riderId,
+        captainId: route.captainId,
+        routeId: route.id,
+        pickup: from,
+        destination: to,
+        hopPickup: hopPickup || from,
+        hopDestination: hopDestination || to,
+        distanceKm,
+        requestedSeats: requiredSeats
       });
 
       setBackendRideRequestIds((current) => ({
@@ -2444,7 +2425,7 @@ export default function App() {
     }
 
     try {
-      const backendRequests = await apiRequest(`/api/captains/${captainId}/requests`);
+      const backendRequests = await getCaptainRequests(captainId);
       const mappedRequests = backendRequests.map((request) => ({
         id: request.id,
         rider: request.riderName,
@@ -3023,9 +3004,39 @@ export default function App() {
     setRiderProfile((current) => ({ ...current, [field]: value }));
   };
 
-  const handleProfileUpdate = () => {
+  const handleProfileUpdate = async () => {
+    const riderId = apiSession?.user?.role === 'rider' ? apiSession.profile?.id : '';
+
+    if (riderId) {
+      try {
+        const profile = await apiRequest(`/api/riders/${riderId}/profile`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            fullName: riderProfile.name,
+            phone: riderProfile.phone,
+            homeStop: riderProfile.home,
+            emergencyContact: riderProfile.emergency
+          })
+        });
+        setApiSession((current) => ({
+          ...current,
+          profile,
+          user: {
+            ...current.user,
+            fullName: riderProfile.name,
+            phone: riderProfile.phone
+          }
+        }));
+        setProfileStatus('Profile updated and saved in PostgreSQL.');
+      } catch (error) {
+        setProfileStatus(`Profile update failed: ${error.message}`);
+        return;
+      }
+    } else {
+      setProfileStatus('Profile updated in local demo mode.');
+    }
+
     setIsProfileEditing(false);
-    setProfileStatus('Profile updated successfully.');
   };
 
   const handleCaptainRouteChange = (field, value) => {
@@ -3192,7 +3203,9 @@ export default function App() {
             fromLocation: routeSource,
             toLocation: routeDestination,
             vacantSeats: pricing.vacantSeats,
-            distanceKm: routeDistance
+            distanceKm: routeDistance,
+            vehicleType: captainRoute.vehicleType,
+            departureTime: captainRoute.departureTime
           })
         });
 
@@ -3219,7 +3232,7 @@ export default function App() {
       ...current,
       email: current.email || (signupRole === 'Captain' ? 'captain@gmail.com' : 'rider@gmail.com')
     }));
-    setAuthStatus(`Gmail selected for ${signupRole}. In backend this will call ${apiPreview.gmail}.`);
+    setAuthStatus(`Gmail selected for ${signupRole}. Account details will be submitted through ${apiPreview.signup}.`);
   };
 
   const validateEmail = (value) => /\S+@\S+\.\S+/.test(value);
@@ -3305,22 +3318,19 @@ export default function App() {
     };
 
     try {
-      const payload = await apiRequest('/api/auth/signup', {
-        method: 'POST',
-        body: JSON.stringify({
-          role: signupRole.toLowerCase(),
-          fullName: signupForm.fullName,
-          email: signupForm.email,
-          phone: signupForm.phone,
-          password: signupForm.password,
-          gender: signupForm.gender,
-          homeStop: signupForm.homeStop,
-          emergencyContact: signupForm.emergencyContact,
-          vehicleType: signupForm.vehicleType,
-          vehicleNumber: signupForm.vehicleNumber,
-          licenseNumber: signupForm.licenseNumber,
-          upiId: `${normalize(signupForm.fullName).replace(/\s+/g, '') || 'captain'}@upi`
-        })
+      const payload = await signup({
+        role: signupRole.toLowerCase(),
+        fullName: signupForm.fullName,
+        email: signupForm.email,
+        phone: signupForm.phone,
+        password: signupForm.password,
+        gender: signupForm.gender,
+        homeStop: signupForm.homeStop,
+        emergencyContact: signupForm.emergencyContact,
+        vehicleType: signupForm.vehicleType,
+        vehicleNumber: signupForm.vehicleNumber,
+        licenseNumber: signupForm.licenseNumber,
+        upiId: `${normalize(signupForm.fullName).replace(/\s+/g, '') || 'captain'}@upi`
       });
 
       applyBackendSession(payload, signupRole);
@@ -3389,10 +3399,7 @@ export default function App() {
     };
 
     try {
-      const payload = await apiRequest('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify(loginCredentials)
-      });
+      const payload = await login(loginCredentials);
 
       applyBackendSession(payload, role);
       setAuthStatus(`${role} login verified by backend database.`);
@@ -3486,12 +3493,9 @@ export default function App() {
     );
 
     try {
-      await apiRequest(`/api/captain/requests/${requestId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          status: request?.status === 'pending' ? 'location-alert' : 'accepted',
-          captainMessage: message
-        })
+      await saveCaptainRequest(requestId, {
+        status: request?.status === 'pending' ? 'location-alert' : 'accepted',
+        captainMessage: message
       });
       setBackendStatus('Captain alert saved in backend rider request.');
     } catch (error) {
@@ -3546,12 +3550,9 @@ export default function App() {
     );
 
     try {
-      await apiRequest(`/api/captain/requests/${requestId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          status: 'accepted',
-          captainMessage: 'Captain accepted your request. Please confirm when Captain reaches your pickup location.'
-        })
+      await saveCaptainRequest(requestId, {
+        status: 'accepted',
+        captainMessage: 'Captain accepted your request. Please confirm when Captain reaches your pickup location.'
       });
       setBackendStatus('Captain acceptance saved in backend.');
     } catch (error) {
@@ -3582,12 +3583,9 @@ export default function App() {
     );
 
     try {
-      await apiRequest(`/api/captain/requests/${requestId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          status: 'declined',
-          captainMessage: 'Captain declined this request. RideRelay will assign another Captain.'
-        })
+      await saveCaptainRequest(requestId, {
+        status: 'declined',
+        captainMessage: 'Captain declined this request. RideRelay will assign another Captain.'
       });
       setBackendStatus('Captain decline saved in backend.');
     } catch (error) {
@@ -3620,9 +3618,9 @@ export default function App() {
     );
 
     try {
-      await apiRequest(`/api/rides/${requestId}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'present-at-pickup' })
+      await updateRideStatus(requestId, {
+        status: isPresent ? 'present-at-pickup' : 'not-at-pickup',
+        note: captainMessage
       });
       setBackendStatus(isPresent ? 'Pickup presence saved in backend.' : 'Pickup alert saved in backend.');
     } catch (error) {
@@ -3694,10 +3692,7 @@ export default function App() {
     );
 
     try {
-      await apiRequest(`/api/rides/${requestId}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status })
-      });
+      await updateRideStatus(requestId, { status });
       setBackendStatus(status === 'ride-started' ? 'Ride start saved in backend.' : 'Ride completion saved in backend.');
       if (isCompleted) {
         await syncCaptainRequestsFromBackend();
@@ -4768,9 +4763,9 @@ export default function App() {
               <h3>{apiPreview.signup}</h3>
               <p>{authStatus}</p>
             <div className="api-list">
-              <code>{apiPreview.gmail}</code>
+              <code>{apiPreview.currentUser}</code>
               <code>{apiPreview.captainRequests}</code>
-              <code>{apiPreview.presence}</code>
+              <code>{apiPreview.rideStatus}</code>
             </div>
             <div className="signup-records">
               {signupRecords.map((record) => (

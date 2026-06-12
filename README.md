@@ -111,6 +111,25 @@ GET /api/health
 storage.driver = json | postgresql
 ```
 
+## Supabase Automation
+
+RideRelay can use Supabase as its hosted PostgreSQL database. The automated
+workflow applies migrations, projects records, verifies synchronization, and
+reports database status whenever backend or database changes reach `main`.
+
+Setup instructions:
+
+```text
+docs/Supabase-Automation.md
+```
+
+Required GitHub Actions secrets:
+
+```text
+SUPABASE_DATABASE_URL
+RIDERELAY_JWT_SECRET
+```
+
 ## Backend API Routes
 
 Auth:

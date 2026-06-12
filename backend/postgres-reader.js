@@ -122,6 +122,7 @@ async function readNormalizedState(pool) {
       captainId: row.captain_source_id,
       fromLocation: row.start_location_text,
       toLocation: row.destination_location_text,
+      availableSeats: numeric(row.available_seats, 1),
       vacantSeats: numeric(row.remaining_seats),
       distanceKm: numeric(row.distance_km),
       status: row.status,

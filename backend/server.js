@@ -1,7 +1,6 @@
 require('dotenv').config({ quiet: true });
 
 const http = require('http');
-const crypto = require('crypto');
 const { URL } = require('url');
 const {
   initializeDb,
@@ -13,7 +12,7 @@ const {
   now,
   audit,
   seedDb
-} = require('./db');
+} = require('./config/db');
 const {
   loadLocations,
   filterLocations,
@@ -21,11 +20,30 @@ const {
   createLocation,
   updateLocation
 } = require('./locations');
+const { cleanUser, findById, getRoleProfile } = require('./models/User');
+const {
+  hashPassword,
+  verifyPassword,
+  createAuthToken,
+  getAuthenticatedUser,
+  canManageProfile,
+  getRequestAccess
+} = require('./middleware/auth');
+const {
+  RATE_PER_KM,
+  normalize,
+  calculateFare,
+  getRequestedSeats,
+  SEAT_HOLDING_STATUSES,
+  routeFitsRider,
+  syncRouteVacantSeats
+} = require('./services/rideService');
+const { isPublicUserRoute } = require('./routes/userRoutes');
+const { isPublicRideRoute } = require('./routes/rideRoutes');
+const { updateCaptainProfile, updateRiderProfile } = require('./controllers/userController');
+const { canTransitionRide } = require('./controllers/rideController');
 
 const PORT = Number(process.env.PORT || 4000);
-const RATE_PER_KM = 10;
-const AUTH_SECRET = process.env.JWT_SECRET || 'riderelay-local-demo-secret';
-const PASSWORD_ITERATIONS = 120000;
 let storageStatus = { driver: 'starting', connected: false };
 
 function sendJson(res, statusCode, data) {
@@ -64,179 +82,8 @@ function parseBody(req) {
   });
 }
 
-function cleanUser(user) {
-  if (!user) {
-    return null;
-  }
-
-  const {
-    password,
-    passwordHash,
-    passwordSalt,
-    ...safeUser
-  } = user;
-  return safeUser;
-}
-
-function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
-  const hash = crypto
-    .pbkdf2Sync(String(password), salt, PASSWORD_ITERATIONS, 64, 'sha512')
-    .toString('hex');
-
-  return { passwordHash: hash, passwordSalt: salt };
-}
-
-function verifyPassword(password, user) {
-  if (user.passwordHash && user.passwordSalt) {
-    const { passwordHash } = hashPassword(password, user.passwordSalt);
-    return crypto.timingSafeEqual(Buffer.from(passwordHash, 'hex'), Buffer.from(user.passwordHash, 'hex'));
-  }
-
-  // Temporary support for existing local demo users. Successful login upgrades them to hashed storage.
-  return user.password === password;
-}
-
-function createAuthToken(user) {
-  const issuedAt = Math.floor(Date.now() / 1000);
-  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-  const payload = Buffer.from(JSON.stringify({
-    sub: user.id,
-    role: user.role,
-    email: user.email,
-    iat: issuedAt,
-    exp: issuedAt + (24 * 60 * 60)
-  })).toString('base64url');
-  const signature = crypto
-    .createHmac('sha256', AUTH_SECRET)
-    .update(`${header}.${payload}`)
-    .digest('base64url');
-
-  return `${header}.${payload}.${signature}`;
-}
-
-function verifyAuthToken(token) {
-  try {
-    const [header, payload, signature] = String(token || '').split('.');
-
-    if (!header || !payload || !signature) {
-      return null;
-    }
-
-    const expectedSignature = crypto
-      .createHmac('sha256', AUTH_SECRET)
-      .update(`${header}.${payload}`)
-      .digest('base64url');
-    const receivedBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expectedSignature);
-
-    if (
-      receivedBuffer.length !== expectedBuffer.length
-      || !crypto.timingSafeEqual(receivedBuffer, expectedBuffer)
-    ) {
-      return null;
-    }
-
-    const claims = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-
-    if (!claims.sub || !claims.exp || claims.exp <= Math.floor(Date.now() / 1000)) {
-      return null;
-    }
-
-    return claims;
-  } catch {
-    return null;
-  }
-}
-
-function getAuthenticatedUser(req, db) {
-  const authorization = req.headers.authorization || '';
-  const [scheme, token] = authorization.split(' ');
-
-  if (scheme !== 'Bearer' || !token) {
-    return null;
-  }
-
-  const claims = verifyAuthToken(token);
-  return claims ? findById(db.users, claims.sub) : null;
-}
-
 function isPublicRoute(method, path) {
-  return (
-    (method === 'GET' && [
-      '/api/health',
-      '/api/locations',
-      '/api/captain-routes',
-      '/api/routes/distance',
-      '/api/rider-routes/search'
-    ].includes(path))
-    || (method === 'POST' && ['/api/auth/signup', '/api/auth/login'].includes(path))
-  );
-}
-
-function canManageProfile(db, authUser, role, profileId) {
-  if (authUser?.role === 'admin') {
-    return true;
-  }
-
-  const profiles = role === 'captain' ? db.captains : db.riders;
-  return profiles.some((profile) => profile.id === profileId && profile.userId === authUser?.id);
-}
-
-function getRequestAccess(db, authUser, request) {
-  if (!authUser || !request) {
-    return null;
-  }
-
-  if (authUser.role === 'admin') {
-    return 'admin';
-  }
-
-  const rider = findById(db.riders, request.riderId);
-  const captain = findById(db.captains, request.captainId);
-
-  if (rider?.userId === authUser.id) {
-    return 'rider';
-  }
-
-  if (captain?.userId === authUser.id) {
-    return 'captain';
-  }
-
-  return null;
-}
-
-function normalize(value = '') {
-  return String(value).trim().toLowerCase();
-}
-
-function findById(items, id) {
-  return items.find((item) => item.id === id);
-}
-
-function calculateFare(distanceKm, vacantSeats) {
-  const safeDistance = Math.max(0, Number(distanceKm) || 0);
-  const safeSeats = Math.max(1, Number(vacantSeats) || 1);
-  return Math.max(10, Math.ceil((safeDistance * RATE_PER_KM) / safeSeats));
-}
-
-function normalizeRouteStop(value = '') {
-  return normalize(value).replace(/\s+/g, ' ');
-}
-
-function routeFitsRider(route, pickup, destination) {
-  const from = normalizeRouteStop(route.fromLocation);
-  const to = normalizeRouteStop(route.toLocation);
-  const riderPickup = normalizeRouteStop(pickup);
-  const riderDestination = normalizeRouteStop(destination);
-
-  return (
-    from === riderPickup
-    || to === riderDestination
-    || from.includes(riderPickup)
-    || to.includes(riderDestination)
-    || riderPickup.includes(from)
-    || riderDestination.includes(to)
-  );
+  return isPublicUserRoute(method, path) || isPublicRideRoute(method, path);
 }
 
 function findLocationByText(locations, value = '') {
@@ -304,14 +151,6 @@ function requireFields(body, fields) {
   return missing;
 }
 
-function getRoleProfile(db, user) {
-  if (user?.role === 'captain') {
-    return db.captains.find((captain) => captain.userId === user.id);
-  }
-
-  return db.riders.find((rider) => rider.userId === user?.id);
-}
-
 function routeMatches(path, pattern) {
   const pathParts = path.split('/').filter(Boolean);
   const patternParts = pattern.split('/').filter(Boolean);
@@ -359,6 +198,14 @@ async function handleRequest(req, res) {
         service: 'RideRelay backend',
         storage: storageStatus,
         time: now()
+      });
+      return;
+    }
+
+    if (req.method === 'GET' && path === '/api/auth/me') {
+      sendJson(res, 200, {
+        user: cleanUser(authUser),
+        profile: getRoleProfile(db, authUser)
       });
       return;
     }
@@ -429,6 +276,7 @@ async function handleRequest(req, res) {
     if (req.method === 'GET' && path === '/api/captain-routes') {
       const from = url.searchParams.get('from') || '';
       const to = url.searchParams.get('to') || '';
+      db.captainRoutes.forEach((route) => syncRouteVacantSeats(db, route));
       const activeRoutes = db.captainRoutes
         .filter((route) => route.status === 'active')
         .filter((route) => !from || !to || routeFitsRider(route, from, to))
@@ -479,6 +327,7 @@ async function handleRequest(req, res) {
       }
 
       const routeDistance = getRouteDistanceDetails(pickup, destination);
+      db.captainRoutes.forEach((route) => syncRouteVacantSeats(db, route));
       const candidateRoutes = db.captainRoutes
         .filter((route) => route.status === 'active')
         .filter((route) => Number(route.vacantSeats) >= seats)
@@ -597,6 +446,7 @@ async function handleRequest(req, res) {
       audit(db, 'auth.signup', { userId: user.id, role: user.role });
       await writeDb(db);
       sendJson(res, 201, {
+        token: createAuthToken(user),
         user: cleanUser(user),
         profile: getRoleProfile(db, user)
       });
@@ -656,13 +506,7 @@ async function handleRequest(req, res) {
         return;
       }
 
-      Object.assign(captain, {
-        fullName: body.fullName ?? captain.fullName,
-        gender: body.gender ?? captain.gender,
-        vehicleType: body.vehicleType ?? captain.vehicleType,
-        vehicleNumber: body.vehicleNumber ?? captain.vehicleNumber,
-        licenseNumber: body.licenseNumber ?? captain.licenseNumber
-      });
+      updateCaptainProfile(db, captain, body);
       audit(db, 'captain.profile.updated', { captainId: captain.id });
       await writeDb(db);
       sendJson(res, 200, captain);
@@ -696,12 +540,7 @@ async function handleRequest(req, res) {
         return;
       }
 
-      Object.assign(rider, {
-        fullName: body.fullName ?? rider.fullName,
-        homeStop: body.homeStop ?? rider.homeStop,
-        gender: body.gender ?? rider.gender,
-        emergencyContact: body.emergencyContact ?? rider.emergencyContact
-      });
+      updateRiderProfile(db, rider, body);
       audit(db, 'rider.profile.updated', { riderId: rider.id });
       await writeDb(db);
       sendJson(res, 200, rider);
@@ -784,7 +623,10 @@ async function handleRequest(req, res) {
         captainId: captain.id,
         fromLocation: body.fromLocation,
         toLocation: body.toLocation,
+        availableSeats: Math.max(1, Number(body.vacantSeats) || 1),
         vacantSeats: Math.max(1, Number(body.vacantSeats) || 1),
+        vehicleType: body.vehicleType || captain.vehicleType,
+        departureTime: body.departureTime || '',
         distanceKm: Number(body.distanceKm) || 0,
         status: 'active',
         currentPin: body.fromLocation,
@@ -874,6 +716,30 @@ async function handleRequest(req, res) {
         return;
       }
 
+      if (route.captainId !== body.captainId || !routeFitsRider(route, body.pickup, body.destination)) {
+        sendJson(res, 400, { error: 'Captain route does not match this rider allocation' });
+        return;
+      }
+
+      syncRouteVacantSeats(db, route);
+      const requestedSeats = Math.max(1, Number(body.requestedSeats) || 1);
+
+      if (requestedSeats > route.vacantSeats) {
+        sendJson(res, 409, { error: 'Not enough vacant seats on this Captain route', vacantSeats: route.vacantSeats });
+        return;
+      }
+
+      const duplicateRequest = db.rideRequests.find((request) => (
+        request.riderId === body.riderId
+        && request.routeId === body.routeId
+        && !['declined', 'ride-completed'].includes(request.status)
+      ));
+
+      if (duplicateRequest) {
+        sendJson(res, 409, { error: 'Rider already has an active request for this route', request: duplicateRequest });
+        return;
+      }
+
       const request = {
         id: createId('REQ'),
         riderId: body.riderId,
@@ -883,7 +749,8 @@ async function handleRequest(req, res) {
         destination: body.destination,
         hopPickup: body.hopPickup || body.pickup,
         hopDestination: body.hopDestination || body.destination,
-        fare: calculateFare(body.distanceKm, route.vacantSeats),
+        requestedSeats,
+        fare: calculateFare(body.distanceKm, route.availableSeats),
         distanceKm: Number(body.distanceKm) || 0,
         status: 'pending',
         captainMessage: '',
@@ -920,9 +787,24 @@ async function handleRequest(req, res) {
         return;
       }
 
+      if (SEAT_HOLDING_STATUSES.includes(request.status) && body.status === 'accepted') {
+        sendJson(res, 409, { error: 'Ride request is already accepted' });
+        return;
+      }
+
+      const route = findById(db.captainRoutes, request.routeId);
+      if (body.status === 'accepted') {
+        syncRouteVacantSeats(db, route);
+        if (!route || route.vacantSeats < getRequestedSeats(request)) {
+          sendJson(res, 409, { error: 'No vacant seat is available for this request' });
+          return;
+        }
+      }
+
       request.status = body.status;
       request.captainMessage = body.captainMessage ?? request.captainMessage;
       request.updatedAt = now();
+      syncRouteVacantSeats(db, route);
       audit(db, 'ride.request.decision', { requestId: request.id, status: request.status });
       await writeDb(db);
       sendJson(res, 200, request);
@@ -940,7 +822,7 @@ async function handleRequest(req, res) {
         return;
       }
 
-      const allowedStatuses = ['present-at-pickup', 'ride-started', 'ride-completed'];
+      const allowedStatuses = ['present-at-pickup', 'not-at-pickup', 'ride-started', 'ride-completed'];
       if (!allowedStatuses.includes(body.status)) {
         sendJson(res, 400, { error: `Status must be one of ${allowedStatuses.join(', ')}` });
         return;
@@ -948,7 +830,7 @@ async function handleRequest(req, res) {
 
       const requestAccess = getRequestAccess(db, authUser, request);
       const canUpdateStatus = requestAccess === 'admin'
-        || (body.status === 'present-at-pickup' && requestAccess === 'rider')
+        || (['present-at-pickup', 'not-at-pickup'].includes(body.status) && requestAccess === 'rider')
         || (['ride-started', 'ride-completed'].includes(body.status) && requestAccess === 'captain');
 
       if (!canUpdateStatus) {
@@ -956,7 +838,18 @@ async function handleRequest(req, res) {
         return;
       }
 
-      request.status = body.status;
+      if (!canTransitionRide(request.status, body.status)) {
+        sendJson(res, 409, {
+          error: `Cannot move ride from ${request.status} to ${body.status}`,
+          currentStatus: request.status
+        });
+        return;
+      }
+
+      request.status = body.status === 'not-at-pickup' ? 'location-alert' : body.status;
+      if (body.status === 'not-at-pickup') {
+        request.riderAlert = body.note || 'Rider reported that Captain is not at the pickup hub.';
+      }
       request.updatedAt = now();
 
       if (body.status === 'ride-completed') {
@@ -965,6 +858,7 @@ async function handleRequest(req, res) {
 
         if (route) {
           route.currentPin = request.hopDestination || request.destination;
+          syncRouteVacantSeats(db, route);
         }
 
         if (captain) {
@@ -999,12 +893,22 @@ async function handleRequest(req, res) {
         return;
       }
 
+      if (request.status !== 'ride-completed') {
+        sendJson(res, 409, { error: 'Payment is available only after ride completion' });
+        return;
+      }
+
+      if (db.payments.some((payment) => payment.requestId === request.id && payment.status === 'paid')) {
+        sendJson(res, 409, { error: 'This ride is already paid' });
+        return;
+      }
+
       const payment = {
         id: createId('PAY'),
         requestId: request.id,
         riderId: request.riderId,
         captainId: request.captainId,
-        amount: Number(body.amount) || request.fare,
+        amount: Number(request.fare) || 0,
         method: body.method,
         status: 'paid',
         createdAt: now()
@@ -1038,6 +942,21 @@ async function handleRequest(req, res) {
         || !['rider', 'admin'].includes(getRequestAccess(db, authUser, reviewRequest))
       ) {
         sendJson(res, 403, { error: 'Review submission denied for this ride' });
+        return;
+      }
+
+      if (reviewRequest.status !== 'ride-completed') {
+        sendJson(res, 409, { error: 'Review is available only after ride completion' });
+        return;
+      }
+
+      if (!db.payments.some((payment) => payment.requestId === reviewRequest.id && payment.status === 'paid')) {
+        sendJson(res, 409, { error: 'Complete payment before submitting a review' });
+        return;
+      }
+
+      if (db.reviews.some((item) => item.requestId === reviewRequest.id)) {
+        sendJson(res, 409, { error: 'A review was already submitted for this ride' });
         return;
       }
 

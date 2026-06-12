@@ -11,7 +11,8 @@
     "db:project": "node scripts/project-db.js",
     "db:status": "node scripts/db-status.js",
     "db:verify": "node scripts/verify-db.js",
-    "check": "node --check server.js"
+    "db:supabase:deploy": "node scripts/deploy-supabase.js",
+    "check": "node --check server.js && node --check middleware/auth.js && node --check services/rideService.js && node --check controllers/userController.js && node --check controllers/rideController.js && node --check routes/userRoutes.js && node --check routes/rideRoutes.js"
   },
   "dependencies": {
     "dotenv": "^17.2.3",

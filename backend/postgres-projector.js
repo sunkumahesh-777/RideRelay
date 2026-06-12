@@ -165,7 +165,8 @@ async function projectTripsAndRequests(client, db) {
     `, [
       stableUuid('trip', route.id), route.id, stableUuid('captain', route.captainId),
       route.fromLocation, route.toLocation, captain?.vehicleType || 'Unknown',
-      Math.max(1, Number(route.vacantSeats || 1)), Math.max(0, Number(route.vacantSeats || 0)),
+      Math.max(1, Number(route.availableSeats ?? route.vacantSeats ?? 1)),
+      Math.max(0, Number(route.vacantSeats || 0)),
       Number(route.distanceKm || 0), route.currentPin || route.fromLocation,
       route.status || 'active', JSON.stringify(route), timestamp(route.createdAt)
     ]);

@@ -1,0 +1,166 @@
+{
+  "project": {
+    "name": "RideRelay",
+    "module": "backend",
+    "runtime": "Node.js",
+    "database": "PostgreSQL",
+    "hostedDatabaseTarget": "Supabase",
+    "description": "Backend APIs, allocation rules, persistence, database automation, and verification for RideRelay."
+  },
+  "folders": {
+    "backend": {
+      "purpose": "RideRelay HTTP API and database integration",
+      "files": {
+        "server.js": "Small HTTP application entry and API dispatcher.",
+        "config/db.js": "Stable database entry used by the server and modular backend.",
+        "controllers/userController.js": "Rider and Captain profile update handlers.",
+        "controllers/rideController.js": "Ride lifecycle transition validation.",
+        "middleware/auth.js": "Password hashing, signed login tokens, authentication, and authorization.",
+        "models/User.js": "User-safe serialization and role-profile helpers.",
+        "models/Ride.js": "Ride status and seat lifecycle definitions.",
+        "routes/userRoutes.js": "User/authentication route definitions.",
+        "routes/rideRoutes.js": "Ride and location route definitions.",
+        "services/rideService.js": "Fare, matching, and seat-allocation business rules.",
+        "database/schema.sql": "Backend-local PostgreSQL schema copy for inspection and sharing.",
+        "db.js": "Compatibility persistence implementation used behind config/db.js.",
+        "locations.js": "Hyderabad fixed pickup hub loading, searching, distance calculations, creation, and updates.",
+        "postgres-projector.js": "Projects RideRelay working state into normalized PostgreSQL tables.",
+        "postgres-reader.js": "Reads normalized PostgreSQL tables back into the RideRelay API state.",
+        "package.json": "Backend dependencies and operational commands.",
+        "package-lock.json": "Locked backend dependency versions.",
+        ".env.example": "Safe local PostgreSQL configuration template.",
+        ".env.supabase.example": "Safe Supabase Session Pooler configuration template."
+      },
+      "scripts": {
+        "db-status.js": "Reports PostgreSQL connection, table count, and projection status.",
+        "deploy-supabase.js": "Runs migration, projection, verification, and status checks for Supabase.",
+        "migrate.js": "Applies schema, migrations, and seed files safely.",
+        "project-db.js": "Projects current RideRelay records into normalized PostgreSQL tables.",
+        "verify-db.js": "Confirms RideRelay and PostgreSQL records match."
+      }
+    },
+    "database": {
+      "purpose": "Production PostgreSQL schema, migrations, and seed records",
+      "files": {
+        "schema.sql": "Creates the normalized RideRelay production tables.",
+        "README.md": "Database setup, migration, and read-cutover documentation."
+      },
+      "migrations": {
+        "001_app_state.sql": "Creates compatibility state storage.",
+        "002_production_constraints.sql": "Adds production constraints and indexes.",
+        "003_projection_identity.sql": "Adds stable source identity for normalized projection.",
+        "004_payment_details_metadata.sql": "Adds Captain payment metadata support."
+      },
+      "seed": {
+        "hyderabad_hubs.sql": "Seeds Hyderabad RideRelay fixed pickup hubs."
+      }
+    },
+    "postman": {
+      "purpose": "Manual API testing",
+      "files": {
+        "RideRelay.postman_collection.json": "RideRelay API request collection.",
+        "RideRelay.environment.json": "Local RideRelay Postman environment."
+      }
+    },
+    "githubWorkflow": {
+      "file": ".github/workflows/supabase-database.yml",
+      "purpose": "Automatically deploys and verifies database changes against Supabase."
+    }
+  },
+  "apiAllocations": {
+    "public": [
+      "GET /api/health",
+      "GET /api/locations",
+      "GET /api/captain-routes",
+      "GET /api/routes/distance",
+      "GET /api/rider-routes/search",
+      "POST /api/auth/signup",
+      "POST /api/auth/login"
+    ],
+    "authenticated": [
+      "GET /api/auth/me",
+      "GET /api/bootstrap"
+    ],
+    "rider": [
+      "GET /api/riders/:riderId/profile",
+      "PATCH /api/riders/:riderId/profile",
+      "GET /api/riders/:riderId/requests",
+      "POST /api/rider-requests",
+      "PATCH /api/rides/:requestId/status",
+      "POST /api/payments",
+      "POST /api/reviews"
+    ],
+    "captain": [
+      "GET /api/captains/:captainId/profile",
+      "PATCH /api/captains/:captainId/profile",
+      "PATCH /api/captains/:captainId/payment",
+      "GET /api/captains/:captainId/routes",
+      "POST /api/captains/:captainId/routes",
+      "PATCH /api/captains/:captainId/dashboard",
+      "GET /api/captains/:captainId/requests",
+      "PATCH /api/captain/requests/:requestId",
+      "PATCH /api/rides/:requestId/status"
+    ],
+    "admin": [
+      "POST /api/locations",
+      "PATCH /api/locations/:id"
+    ]
+  },
+  "databaseTables": [
+    "app_state",
+    "audit_logs",
+    "captain_payment_details",
+    "captain_trips",
+    "captains",
+    "eco_points",
+    "monthly_impact",
+    "notifications",
+    "payments",
+    "pickup_hubs",
+    "projection_status",
+    "reports",
+    "reviews",
+    "ride_requests",
+    "ride_status_events",
+    "riders",
+    "schema_migrations",
+    "users"
+  ],
+  "businessRules": {
+    "authentication": "Passwords are hashed and successful login/signup returns an expiring signed token.",
+    "authorization": "Rider, Captain, and admin access is checked for protected APIs.",
+    "allocation": "Requests must match an active Captain route and cannot exceed vacant seats.",
+    "seatLifecycle": "Seats are held after acceptance and released after decline or ride completion.",
+    "rideLifecycle": [
+      "pending",
+      "accepted",
+      "present-at-pickup",
+      "ride-started",
+      "ride-completed",
+      "paid",
+      "reviewed"
+    ],
+    "payment": "Payment is accepted only after ride completion and duplicate payments are blocked.",
+    "review": "Review is accepted only after payment and duplicate reviews are blocked.",
+    "fare": "RideRelay fuel sharing uses a base rate of Rs 9 per kilometer divided by available seats."
+  },
+  "commands": {
+    "start": "npm start",
+    "validate": "npm run check",
+    "migrate": "npm run db:migrate",
+    "project": "npm run db:project",
+    "verify": "npm run db:verify",
+    "status": "npm run db:status",
+    "deploySupabase": "npm run db:supabase:deploy"
+  },
+  "excludedFromSharingAndGit": [
+    "backend/.env",
+    "backend/data",
+    "backend/node_modules",
+    "frontend/node_modules",
+    "dist",
+    "database passwords",
+    "Supabase database connection URI",
+    "JWT signing secret"
+  ]
+}

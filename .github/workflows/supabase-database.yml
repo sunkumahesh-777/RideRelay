@@ -1,0 +1,49 @@
+name: Deploy Supabase Database
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "database/**"
+      - ".github/workflows/supabase-database.yml"
+
+concurrency:
+  group: riderelay-supabase-production
+  cancel-in-progress: false
+
+jobs:
+  migrate-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+      JWT_SECRET: ${{ secrets.RIDERELAY_JWT_SECRET }}
+      PGSSL: require
+      DB_READ_MODE: normalized
+
+    steps:
+      - name: Check out RideRelay
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Validate backend
+        working-directory: backend
+        run: npm run check
+
+      - name: Deploy and verify Supabase database
+        working-directory: backend
+        run: npm run db:supabase:deploy
